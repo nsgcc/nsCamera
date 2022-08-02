@@ -1,0 +1,259 @@
+nsCamera release notes
+
+Author: Jeremy Martin Hill (jerhill@llnl.gov)
+
+Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+LLNL-CODE-838080
+
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.  See
+license for disclaimers, notice of U.S. Government Rights and license terms and
+conditions.
+
+2.1.1 - In Progress
+
+    NEW FEATURES
+        'logtag' parameter for CameraAssembler adds custom tag to logging messages for
+          distinguishing error messages from different boards
+        'logfile' parameter for CameraAssembler diverts console output to named file
+        Wheel file distribution for pip install
+        added dumpStatus method to store register and status information in dictionary
+        Added loadTextFrames method for frames saved using fast readoff
+        Added software coarse trigger capability (SW_COARSE_CONTROL)
+
+    MINOR CHANGES
+        Added MISC_SENSOR_CTL register and corresponding subregisters to Icarus code
+        Added 'PDBIAS Unready' to reportStatus() on LLNLv4
+        For v4 board, STAT_POTSCONFIGURED subregister renamed to STAT_DACSCONFIGURED
+        Added 'index' parameter to saveTiffs and saveNumpys
+        Updated default python distribution to 3.9
+        Updated various dictionaries to OrderedDicts for human readability
+
+2.1.0 - October 2020
+
+    Synchronized to ICD 2.0
+
+    MINOR CHANGES
+        Removed Daedalus Quad Enable registers
+        Reshuffling of Daedalus-relevant registers and monitors
+        Deactivated standard error messaging for RS422 readoff
+
+
+2.0.9 - March 2020
+
+    Synchronized to ICD 1.18
+
+    MINOR CHANGES
+        Interlacing factor now means number of interlaced lines (generates 'factor + 1'
+          images per frame)
+        Frame parsing can manage interlacing and row subset selection at the same time
+        Added Jupyter tutorial
+        Added abortReadoff functionality
+        'setPPER' function added to set poll period as microseconds
+        New triggering scheme enabled for newer firmware versions
+        'fast' option added to readoff function, saveFrames modified to process text
+        batchAquire function added
+        Added units/scale options for getPressure and getTemp
+        Added board-level variables for pressure calibration setting
+        Added PDF and CHM versions of doxygen files, added index.html to /docs
+
+    BUG FIXES
+        Testsuite restores board after register R/W tests
+        ZDT mode doesn't use interlacing register
+        ZDT mode added stop bit to timing register to force closing of the last frame of
+          odd rows
+        Error message added for setPotV tuning when tuning fails to converge quickly
+
+---------------------------
+
+2.0.8 - 25 June 2019
+
+    Synchronized to ICD 1.1.12
+    Tested against v1 firmware 20190419 and v4 firmware 20190524
+    Testing against Linux and Daedalus waived
+
+    MAJOR CHANGES
+        Reassignment of Daedalus pots/DACs (compatible with firmwares 1019XXXX and
+          4019XXXX and later)
+    MINOR CHANGES
+        Pot names and assignments divided by sensor, new voltages for Daedalus
+        Improved testsuite allows selecting tests, SW trigger check to HW trigger run
+        arm(mode="Software") readies board for software trigger, defaults to hardware;
+          compatible with v1 boards starting with firmware version 20190128 (previous
+          boards may require explicit control of trigger registers).
+          An explicit call to set SW_TRIGGER_CTL is no longer needed
+        Reduced max number of tuning iterations to 20
+        ADC_RESET register restored to v4 board
+        Added dumpNumpy function to save datastream immediately to file
+        RS422 interrupted/incomplete download is saved to numpy file
+        Daedalus features including readoff order
+        Added setRows, setFrames commands to restrict readoff
+        Interlacing, HFW, ZDT functions added to Daedalus, mutual exclusion enforced in
+          software
+        Trigger delay added to Daedalus
+        SW trigger requires explicit enabling
+    BUG FIXES
+        Interlacing readoff in temporal order
+        Fixed noise in software triggering for rs422 readoff
+        Fixed error on close for GigE connection using a specified IP address
+        Corrected Daedalus sensor column mapping
+        Removed bogus software triggering
+        Error handling for OT card close
+        Save and plot functions no longer mutate frame objects
+        Error handling for setRows
+
+---------------------------
+
+2.0.7 - 15 January 2019
+
+    MINOR CHANGES
+        Python dependencies are included in package for offline installation
+        Reorganization of README and elaboration of installation instructions
+        testSuite.py tests board-,  sensor-, and OS- specific features
+        Icarus sensor code aware of different VRESET_HIGH_VALUE registers on boards
+        OT timeout extended to 30 seconds
+    BUG FIXES
+        Correction of LLNL_v4 monitor assignments
+        Corrected assignments in status register
+        Removed complete Pillow dependence from setup.py
+        Check for Sandia board fixed
+        Error in monitor name parsing corrected
+
+---------------------------
+
+2.0.6 - 1 November 2018
+
+    MAJOR CHANGES
+        Removed C-code dependent CRC code (C compiler no longer required for installation)
+        Multiple levels of verbosity implemented. Use 'verbose = 4' to display all
+          logging messages
+        Added setArbTiming function to allow setting of arbitrary timing sequences
+    MINOR CHANGES
+        Increased wait for pot tuning
+        Added Errors&Warnings document to describe potential logging messages
+        Miscellaneous informational messages now moved to logging system
+        Port number option added to testSuite command line
+        Added 'actual' parameter to getTiming to return actual timing scheme generated by
+          the FPGA
+        CameraAssembler verbose parameter accepts integer arguments (deprecated boolean
+          arguments will still work, but only provide critical logging messages)
+    BUG FIXES
+        getBoardInfo() was missing return value
+        Software reset sets correct subregister value
+        Addressed corner case of getTiming when timing sequence only fits once into 40
+          bits
+        Fixed inconsistent signature of getTiming()
+        Deprecated FPGA identifier '0x80000001' accepted as valid
+
+---------------------------
+
+2.0.5 - 26 September 2018
+
+    MAJOR CHANGES
+        Added saveNumpys function
+        Optimized data processing for speed
+    MINOR CHANGES
+        Command line interface options for testSuite.py
+        Setpot can manage alphabetical pot identifiers (for LLNLv4)
+        Corrected stripe order for Daedalus sensor
+        Added cameraAssembler class variables with FPGA information
+        Added printBoardInfo() function to display FPGA-reported information
+        Added monitor aliases (e.g., 'MON_HST_A_PDELAY')
+    BUG FIXES
+        Ignores failure to load optional modules
+        Fixed undeclared variable error
+        Fixed RS422 inability to reconnect after power failure
+
+---------------------------
+
+2.0.4 - 3 July 2018
+
+    MAJOR CHANGES
+        Added image parsing and interlacing functionality to readoff
+        Preliminary Daedalus parsing
+    MINOR CHANGES
+        FPGA features added to FPGA_NUM specification
+        Readoff returns data size in bytes instead of characters
+        Light meter scripts added
+        Sensor-specific register and subregister definitions moved to sensor classes
+        Added ADC workaround for repeated acquisitions
+        Added Flat field removal scripts
+        Attempts redownload if error or payload size is incorrect
+        Added joblib dependency to setup
+        Removed tifffile dependency
+        Added command-line options to testSuite
+    BUG FIXES
+        Fixed sensor-specific subregister assignments
+
+---------------------------
+
+2.0.3 - 24 April 2018
+
+    MINOR CHANGES
+        Moved some single-bit register writes to subregister objects
+        Added software reset function to cameraAssembler
+        Added board info function to cameraAssembler
+        Increased waiting time for GigE search for cards
+    BUG FIXES
+        GigE error returns full packet size of zeros
+        getTemp restricted to relevant bits of register
+        Removed unintended restoration of ADC defaults from arm()
+        fixed RS422 compatibility issue with Python 3
+        Fixed 39-1 corner case for getTiming
+
+---------------------------
+
+2.0.2 - 20 March 2018
+
+    MAJOR CHANGES
+        LLNLv4 board code under development
+    MINOR CHANGES
+        Updated default POT values
+        Check for FPGA & sensor compatibility
+        Daedalus subregisters added
+        ADC5 changed to internal Vref
+        Pot tuner more conservative approach
+        Vreset default to .5V
+        Removed unused FPA_TYPE_SEL
+    BUG FIXES
+        Missing and mislabeled registers
+        Incorrect setting for HST_RO_NC_IBIAS pot
+        Broken compatibility checker sensor vs FPGA
+        Corrected compatible FPGA codes
+        Fixed silent fail in gigE response
+
+---------------------------
+
+2.0.1 - 27 February 2018
+
+    MAJOR CHANGES
+        12-bit register addressing added (subcommand removed from packet structure)
+        Daedalus-specific registers added to LLNLv1
+    BUG FIXES
+        Added error handling for incorrect packet sizes in RS422, no longer checks CRC on
+          empty packets
+        Added sleep to avoid register read failure after payload transfer on RS422
+
+---------------------------
+
+2.0.0 - 1 February 2018
+
+    MAJOR CHANGES
+        SNL board no longer supported; related files removed from package
+        CameraLink interface no longer supported; related files removed from package
+        testsuite.py moved to /docs
+    NEW FEATURES
+        Daedalus sensor added as option (not yet operational)
+    BUG FIXES
+        consistent signature for arm() functions across comm types
+
+------------------------------------------------------
+Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+LLNL-CODE-838080
+
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.  See
+license for disclaimers, notice of U.S. Government Rights and license terms and
+conditions.

@@ -1,0 +1,25 @@
+name: nsc27
+channels:
+  - conda-forge
+dependencies:
+  - python=2.7
+  - matplotlib
+  - numpy
+  - pip
+  - pyserial
+  - setuptools
+  - pillow
+  - joblib
+  - spyder
+  - jupyter
+  - pandas
+  - pyqtgraph
+  - scipy
+  - conda-pack
+  - pyvisa
+  - ipywidgets
+  - pyvisa-py
+  - h5py
+  - pywin32
+  - pybind11
+  - cython

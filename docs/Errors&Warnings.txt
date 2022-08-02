@@ -1,0 +1,193 @@
+nsCamera Errors and Warnings list
+
+Author: Jeremy Martin Hill (jerhill@llnl.gov)
+
+Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  LLNL-CODE-838080
+
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under contract no. DE-AC52-07NA27344
+(Contract 44) between the U.S. Department of Energy (DOE) and Lawrence Livermore National Security, LLC (LLNS) for the
+operation of LLNL.  nsCamera is distributed under the terms of the MIT license. All new
+contributions must be made under this license.
+
+Version: 2.1.1  (July 2021)
+
+---------------------------
+
+### CameraAssembler Messages ###
+
+# CRITICAL
+
+> invalid board name
+> invalid comms name
+> invalid sensor name
+    The software is not able to match a name in the CameraAssembler constructor with an available component
+
+> invalid IP provided
+    provided IP could not be parsed as valid (e.g. '192.168.1.999')
+
+> Initialization failed: unable to communicate with board.
+    Repeated attempts to communicate with the board have failed
+
+# ERROR
+
+> Invalid register name
+> Invalid register/subregister (submitMessages
+> invalid lookup
+    An invalid resource name has been supplied for register or subregister operations. This may indicate a mispelling or
+    a request for a resource that is not valid for the current camera instance (e.g., "MANUAL_SHUTTERS_MODE" for a
+    Daedalus camera.)
+
+> unable to read monitor value
+> unable to read pot
+> unable to read subregister
+> unable to retrieve register setting (getSubregister):
+    The software was unable to read the contents a valid resource for an unspecified reason
+
+> unable to confirm set subregister
+    The software attempted to set a subregister, but was unable to confirm the setting. WARNING: the actual state of the
+    subregister is unknown, the set may or may not have been successful
+
+> not a writable subregister
+    The software has attempted to write to a read-only subregister
+
+> checkRegSet failure
+> plotFrames: unable to plot frame
+> saveNumpys: unable to save arrays
+> saveTiffs: unable to save images
+> saveFrames: unable to save frames
+    An unspecified error has caused the named function to fail
+
+> unable to tune pot POTN; monitor shows no change with pot variation
+    The monitor associated with the pot is not responsive to changes in the pot setting; either the pot is
+    malfunctioning or the monitor is not connected. In either case, tuning is impossible.
+
+> pot POTN does not have a corresponding monitor
+    A monitor reading has been requested for a pot that does not have a monitor associated with it
+
+> replacement string too long (setSubregister)
+    The software has attempted to make a bit string assignment that does not fit in the specified subregister
+
+# WARNING
+
+> FPGA self-identification is invalid
+> FPGA self-identifies as SNLrevC, which is not supported by this software
+    The FPGA_NUM register on the board is incorrect or an invalid board has been connected
+
+> interlacing setting requires dropping of lines to maintain consistent frame sizes (deInterlace)
+    Extra lines at the bottom of the image are dropped. e.g., for a factor of 3, 1024 lines are interlaced into frames
+    of 341 lines each, with 1 line dropped
+
+> powerCheck function has failed; may indicate current or recent power failure
+    The power check function shows disparity between software and on-board timers or is unable to contact the board
+
+> pot POTN set to 3V, monitor returns 2.92V
+    Pot tuning was unable to reduce the gap between the requested and actual voltages to less than that represented by a
+    single LSB on the pot
+
+
+### Board messages ###
+
+# ERROR
+
+> clearStatus failed
+> error in register read
+> unable to read 'ADC5_VREF3'
+> unable to retrieve temperature information (getTemp), returning "0"
+> unable to retrieve timer information (getTimer), returning "0"
+    An unspecified error prevented function completion
+
+> inconsistent mode settings on ADC5
+    code is unable to parse ADC5_CONFIG_DATA register
+
+> SRAM timeout; proceeding with download attempt
+    waitForSRAM has reached timeout without an SRAM_READY signal. Readoff will proceed without the ready signal
+
+> unable to confirm sensor compatibility with FPGA
+    The sensor selected in software does not match that indicated by FPGA_NUM register
+
+# WARNING
+
+> 'getPressure' is currently not implemented on the LLNLv1 board
+    Function call is ignored and a zero is returned
+
+
+### Comms messages ###
+
+# CRITICAL
+
+> CountCards failure
+> OpenConnection failure, error
+> Unable to open serial connection
+> ZestETM1Init failure
+    An unspecified error has caused the communications system to fail
+
+> no Orange Tree cards found
+> No usable board found
+> No usable board found at port N
+    The software was unable to locate an appropriate FPGA board
+
+# ERROR
+
+> Error detected in readSRAM
+> readSerial error
+> sendCMD: read payload failed
+> sendCMD: readSerial failed (regular packet)
+> unable to arm camera
+> writeSerial error
+    An unspecified error prevented function completion
+
+> readSerial : packet too small
+> sendCMD- packet too small, payload may be incomplete
+> sendCMD- response too small, returning zeros
+> sendCMD: empty response from board
+> sendCMD: incorrect response; expected M bytes, received N
+    Response packet from FGPA is too small or absent
+
+> sendCMD- regular packet CRC fail
+    CRC failed for response of non-payload packet
+
+> sendCMD: payload CRC fail
+    CRC failed for complete payload packet
+
+> sendCMD: payload preface CRC fail
+    CRC failed for internal (preface) packet inside payload packet
+
+
+### Sensor messages ###
+
+
+# ERROR
+
+> Invalid manual shutter timing list
+> Invalid sequence setting for side
+> Timing sequence is too long to be implemented; timing settings unchanged
+    An invalid sequence was used to set timing
+
+> Invalid sensor side: C; timing settings unchanged'
+    An operation was attempted for something other than side A or B
+
+> invalid interlacing factor attempted
+    A non-integral or impossible interlacing factor was supplied
+
+> sensor not detected
+> unable to confirm sensor status
+    Sensor-specific signal not correctly detected or processed by the FPGA
+
+> Unable to retrieve timing setting (getTiming)
+    unspecified error prevented timing information retrieval
+
+
+# WARNING
+
+> Due to sequence length, actual timing sequence will be...
+    If timing sequence does not fit four times into 40 bits, FPGA rollover of the timing register may result in a
+    different actual sequence being generated
+
+
+------------------------------------------------------
+Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  LLNL-CODE-838080
+
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under contract no. DE-AC52-07NA27344
+(Contract 44) between the U.S. Department of Energy (DOE) and Lawrence Livermore National Security, LLC (LLNS) for the
+operation of LLNL.  nsCamera is distributed under the terms of the MIT license. All new
+contributions must be made under this license.

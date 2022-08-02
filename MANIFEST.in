@@ -1,0 +1,8 @@
+recursive-include nsCamera *
+include README.md
+prune _archive*
+prune scripts*
+prune output*
+prune workspace*
+prune nsCamera/docs/tutorialoutput*
+prune nsCamera/docs/latex*

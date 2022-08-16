@@ -155,10 +155,9 @@ On Linux systems, use the appropriate package installer:
 `apt-get install python-devel` or `yum install python-devel`  
 
 ## Gigabit Ethernet setup
-To utilize the gigabit interface, the ZestETM1 driver software (from OrangeTree Technologies, https://www.orangetreetech.com/), must be installed. This is not open source, and so generally cannot be distributed with the nsCamera software. 
-- Locate the comms directory inside the nsCamera installation. In an Anaconda environment, this will be something like *...\Anaconda3\envs\myenv\Lib\site-packages\nscamera\comms* 
-- Copy the ZestETM1 directory from the OrangeTree CD (located at something like *E:\Source\Host\ZestETM1*) into the comms directory
-- on Linux or MacOS, the library must be compiled before use:
+To utilize the gigabit interface, the ZestETM1 driver software must be installed. 
+- Windows: the library is already installed and available, no action by the user is required
+- Linux or MacOS: the library must be compiled before use:
   1. Install the relevant developer tools for your system
    - Linux: run `yum groupinstall 'Development Tools'` or `apt-get install build-essential`
    - MacOS: run `xcode-select –install`
@@ -170,6 +169,7 @@ The Orange Tree hardware on the card must be configured to use an accessible IP 
 
 **NOTE:** On certain Linux systems, the OT software may be unable to automatically locate boards on the network—the GigE setup will fail with a 'no Orange Tree cards found' error despite a valid card being available on the network. In such a case, the CameraAssembler must be instantiated with parameters that explicitly identify the board's IP address.
 
+*We extend a special thank-you to OrangeTree Technologies, (https://www.orangetreetech.com/) for permission to include the ZestETM1 driver and source code in this distribution* 
 
 # Documentation
 
@@ -548,8 +548,8 @@ A valid installation of the nsCamera software on the Windows platform may fail t
 
 # Contributors
 
-Matthew Dayton - Project POC: dayton5@llnl.gov    
-Brad Funsten  
+Matthew Dayton    
+Brad Funsten  - Hardware POC: fusnten1@llnl.gov
 Brandon Mitchell  
 Chris Macaraeg  
 Andrew Wagenmaker  

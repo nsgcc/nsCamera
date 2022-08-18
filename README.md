@@ -1,4 +1,3 @@
-<style type="text/css">@page { size: letter; margin-top: 0.4in; margin-bottom: 0.4in;margin-left: -0.05in; margin-right: -0.05in }</style>
 # *nsCamera* Software Interface
 
 Copyright &copy; 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  

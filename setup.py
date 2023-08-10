@@ -44,7 +44,7 @@ setup(
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: MIT License".
+        "License :: OSI Approved :: MIT License",
         "Topic :: Scientific/Engineering",
         'Operating System :: MacOS :: MacOS X',
         'Operating System :: Microsoft :: Windows',

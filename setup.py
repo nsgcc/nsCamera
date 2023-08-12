@@ -32,7 +32,7 @@ Version: 1.0       (January 2017)
 """
 
 from setuptools import setup, find_packages
-from Cython.Build import cythonize
+# from Cython.Build import cythonize
 
 setup(
     name="nsCamera",

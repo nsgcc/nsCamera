@@ -48,14 +48,9 @@ This package supports the LLNLv1 and LLNLv4 boards; for the Sandia RevC board, p
 
 # Installation
 
-## Option 1: Get the prepackaged nsCamera Python environment
+## Install a Python interpreter
 
-A prepackaged Anaconda environment with nsCamera and supporting modules installed is available 
-for Windows users. Please contact Matthew Dayton at dayton5@llnl.gov directly for access.
-
-## Option 2: Install a Python interpreter
-
-An installation of a python interpreter is required on the host computer to run nsCamera. Although some operating systems come with python preinstalled, we recommend the installation of Anaconda Python, which provides a complete python system (including a convenient package management system) that can be deployed without administrative privileges (which we also recommend).
+An installation of a python interpreter is required on the host computer to run nsCamera. Although some operating systems come with python preinstalled, we recommend the installation of Anaconda Python, which provides a complete python system (including a convenient package management system) that can be deployed without administrative privileges (which we also recommend). If you wish to use an existing python environment instead of a new one, activate the environment and skip to 'Install the nsCamera software'.
 
  **NOTE:** nsCamera is compatible with both Python 2 and Python 3, but Python 2 is no longer being maintained, and will shortly be banned by many sites' security policies. We therefore recommend the use of Python 3 whenever practical.
 
@@ -106,18 +101,18 @@ first delete the line with 'pywin32'):
 
 ## Install the nsCamera software
 
-_Dependencies_: numpy, matplotlib, pyserial, setuptools
+_Dependencies_: numpy, matplotlib, pyserial, setuptools, Pillow
 
 ##### Required packages should be installed automatically by the setup script if not already present.
 
 1. Open an Anaconda command line window and activate the relevant python environment, e.g, `conda activate nsc39` (or continue in the same window if you just created a python environment)
-1. Open the *dist* folder and install the wheel file, e.g., 
+1. Download the wheel file from the 'Releases' section of the GitHub page and install it:
 	
 	`pip install nsCamera-2.1.1-py2.py3-none-any.whl`
 	
 1. ALTERNATE INSTALL METHOD
-	1. Decompress the install package *nsCamera-X.Y.zip* or *nsCamera-X.Y.tar.gz*
-	1. At the command line, go to the nsCamera install directory and enter `python setup.py install`
+	1. Download and decompress the install package *nsCamera-X.Y.zip* or *nsCamera-X.Y.tar.gz* from the releases link
+	1. At the command line, go to the unzipped nsCamera directory and enter `pip install .` (Don't forget the period!)
    Be sure you are using the correct environment or python installation.
 
 - If you are attempting an offline install, you may receive an error like

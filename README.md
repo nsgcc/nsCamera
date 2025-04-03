@@ -69,13 +69,10 @@ This package supports the LLNLv1 and LLNLv4 boards; for the Sandia RevC board, p
 
 # Installation
 
-## Option 1: Get the prepackaged nsCamera Python environment
 
-A prepackaged Anaconda environment with nsCamera and supporting modules installed is available for Windows users. Please contact us directly for access
+## Install a Python interpreter
 
-## Option 2: Install a Python interpreter
-
-An installation of a python interpreter is required on the host computer to run nsCamera. Although some operating systems come with python preinstalled, we recommend the installation of Anaconda Python, which provides a complete python system (including a convenient package management system) that can be deployed without administrative privileges (which we also recommend).
+An installation of a python interpreter is required on the host computer to run nsCamera. Although some operating systems come with python preinstalled, we recommend the installation of Anaconda Python, which provides a complete python system (including a convenient package management system) that can be deployed without administrative privileges (which we also recommend). If you wish to use an existing python environment instead of a new one, activate the environment and skip to 'Install the nsCamera software'.
 
  **NOTE:** nsCamera is compatible with both Python 2 and Python 3, but Python 2 is no longer being maintained, and will shortly be banned by many sites' security policies. We therefore recommend the use of Python 3 whenever practical.
 
@@ -117,13 +114,13 @@ If this installation is on a dedicated machine or if no other python-dependent a
 
 3. Create a conda environment using the template YAML file provided in the docs folder (for a Linux install, you must first delete the line with 'pywin32'):
 
-   `conda env create -f .\nsc3.yml`
+   `conda env create -n my_nsc_env -f .\nsc3.yml`
 
 4. Activate the freshly created environment
 
-   `conda activate nsc3`
+   `conda activate my_nsc_env`
 
-   The command line prompt should change to show *(nsc3)* at the beginning of the line.
+   The command line prompt should change to show *(my_nsc_env)* at the beginning of the line.
 
 ## Install the nsCamera software
 
@@ -131,15 +128,15 @@ _Dependencies_: joblib, matplotlib, numpy, Pillow, pyserial, setuptools
 
 ##### Required packages should be installed automatically by the setup script if not already present.
 
-1. Open an Anaconda command line window and activate the relevant python environment, e.g, `conda activate nsc3` (or continue in the same window if you just created a python environment)
+1. Open an Anaconda command line window and activate the relevant python environment, e.g, `conda activate my_nsc_env` (or continue in the same window if you just created a python environment)
 1. install the wheel file (usually located in the *dist* directory), e.g., 
 	
 	`pip install nsCamera-2.1.2-py2.py3-none-any.whl`
 	
 1. ALTERNATE INSTALL METHOD
-	1. Decompress the install package *nsCamera-X.Y.zip* or *nsCamera-X.Y.tar.gz*
+	1. Download and decompress the install package *nsCamera-X.Y.zip* or *nsCamera-X.Y.tar.gz* available from the release link on the nsCamera GitHub page
 	1. Normal users: At the command line, go to the nsCamera install directory and enter `pip install setup.py`
-    1. nsCamera developers: Inside the installation directory, run `pip install -e .` to install an editable distribution (the interpreter uses the local file structure rather than installing one directly in the python environment).
+    1. nsCamera developers: Inside the installation directory, run `pip install -e .` (don't forget the period!) to install an editable distribution (the interpreter uses the local file structure rather than installing one directly in the python environment).
    Be sure you are using the correct environment or python installation.
 
 - If you are attempting an offline install, you may receive an error like
@@ -249,7 +246,7 @@ NOTE: if nsCamera is not installed in the default conda environment, you may nee
 
 Running Jupyter with `jupyter notebook` starts a web server interface to the python interpreter. If a web page does not automatically open in your browser, open this url in your browser: http://127.0.0.1:8888
 
-If a copy of this file is not obviously available (e.g., you no longer have your nsCamera download conveniently at hand), it can be found in the python distribution, with a path something like *C:\Users\username\Applications\anaconda3\Lib\site-packages\nsCamera-2.1.2-py3.12.egg\nsCamera\docs* for a base Anaconda distribution, or *C:\Users\hill35\Applications\anaconda3\envs\nsc3\Lib\site-packages\nsCamera-2.1.2-py3.12.egg\nsCamera\docs** for an installation in the 'nsc3' environment.
+If a copy of this file is not obviously available (e.g., you no longer have your nsCamera download conveniently at hand), it can be found in the python distribution, with a path something like *C:\Users\username\Applications\anaconda3\Lib\site-packages\nsCamera-2.1.2-py3.12.egg\nsCamera\docs* for a base Anaconda distribution, or *C:\Users\hill35\Applications\anaconda3\envs\my_nsc_env\Lib\site-packages\nsCamera-2.1.2-py3.12.egg\nsCamera\docs** for an installation in the 'my_nsc_env' environment.
 
 This script will generate output files, so we recommend copying the file to a user directory (e.g., Desktop or Documents) before running it. Navigate to this new copy of the file using the Jupyter web page browser window and follow the instructions.
 

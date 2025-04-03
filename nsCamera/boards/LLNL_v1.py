@@ -1,21 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-The LLNLv1 board is defined here, including monitors, pots, and other board-specific
-  settings
+LLNLv1 board definition, including monitors, pots, and other board-specific settings
 
-Author: Matthew Dayton (dayton5@llnl.gov)
 Author: Jeremy Martin Hill (jerhill@llnl.gov)
+Author: Matthew Dayton (dayton5@llnl.gov)
 
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 
-Version: 2.1.1  (July 2021)
+Version: 2.1.2 (February 2025)
 """
 
 import logging
@@ -36,7 +35,7 @@ class llnl_v1:
 
     # FPGA register map - use '.upper()' on keys to ensure uppercase lookup
     registers = OrderedDict(
-        {  # definitions current as of ICD 2.0
+        {
             "FPGA_NUM": "000",
             "FPGA_REV": "001",
             "HS_TIMING_CTL": "010",
@@ -135,7 +134,6 @@ class llnl_v1:
         ("MAXERR_UTTR", "DIAG_MAX_CNT_1", 31, 16, True),
         ("MAXERR_URTR", "DIAG_MAX_CNT_1", 15, 16, True),
         ("HW_TRIG_EN", "TRIGGER_CTL", 0, 1, True),
-        ("DUAL_EDGE_TRIG_EN", "TRIGGER_CTL", 1, 1, True),
         ("SW_TRIG_EN", "TRIGGER_CTL", 2, 1, True),
         ("READ_SRAM", "SRAM_CTL", 0, 1, True),
         ("RESET_TIMER", "TIMER_CTL", 0, 1, True),
@@ -157,7 +155,7 @@ class llnl_v1:
         ("STAT_SENSREADDONE", "STAT_REG", 6, 1, False),
         ("STAT_SRAMREADSTART", "STAT_REG", 7, 1, False),
         ("STAT_SRAMREADDONE", "STAT_REG", 8, 1, False),
-        ("STAT_HSTCONFIGURED", "STAT_REG", 9, 1, False),
+        ("STAT_HSTCONFIGSTART", "STAT_REG", 9, 1, False),
         ("STAT_ADCSCONFIGURED", "STAT_REG", 10, 1, False),
         ("STAT_POTSCONFIGURED", "STAT_REG", 11, 1, False),
         ("STAT_TIMERCOUNTERRESET", "STAT_REG", 13, 1, False),
@@ -191,45 +189,6 @@ class llnl_v1:
         ("MON_VRST", "ADC5_DATA_4", 31, 16, False),
     ]
 
-    dummySensorVals = [  # nominal stripe values for dummy sensor
-        [
-            32767,
-            32767,
-            32767,
-            32767,
-            32767,
-            30311,
-            27555,
-            24868,
-            2960,
-            5799,
-            8581,
-            11351,
-            14105,
-            16787,
-            19559,
-            22230,
-        ],
-        [
-            2962,
-            5790,
-            8581,
-            11341,
-            14087,
-            16851,
-            19521,
-            22134,
-            32767,
-            32767,
-            32767,
-            32767,
-            32767,
-            30291,
-            27567,
-            24915,
-        ],
-    ]
-
     def __init__(self, camassem):
         self.ca = camassem
         self.logcrit = self.ca.logcritbase + "[LLNL_v1] "
@@ -239,10 +198,9 @@ class llnl_v1:
         self.logdebug = self.ca.logdebugbase + "[LLNL_v1] "
         logging.info(self.loginfo + "initializing board object")
         self.VREF = 2.5  # default
-        self.ADC5_mult = 2  # monmax = 2 * VREF
+        self.ADC5_mult = 2  # i.e., monmax = 2 * VREF
         # False => monitor range runs 0 to monmax, True => +/- monmax
         self.ADC5_bipolar = True
-
         self.rs422_baud = 921600
         self.rs422_cmd_wait = 0.3
 
@@ -258,73 +216,73 @@ class llnl_v1:
 
         # map channels to signal names for abstraction at the camera assembler level;
         #   each requires a corresponding entry in 'subregisters'
-        if self.ca.sensorname == "icarus" or self.ca.sensorname == "icarus2":
-            self.subreg_aliases = OrderedDict(
-                {
-                    "COL_BOT_IBIAS_IN": "POT1",
-                    "HST_A_PDELAY": "POT2",
-                    "HST_B_NDELAY": "POT3",
-                    "HST_RO_IBIAS": "POT4",
-                    "HST_OSC_VREF_IN": "POT5",
-                    "HST_B_PDELAY": "POT6",
-                    "HST_OSC_CTL": "POT7",
-                    "HST_A_NDELAY": "POT8",
-                    "COL_TOP_IBIAS_IN": "POT9",
-                    "HST_OSC_R_BIAS": "POT10",
-                    "VAB": "POT11",
-                    "HST_RO_NC_IBIAS": "POT12",
-                    "VRST": "POT13",
-                    "MON_HST_A_PDELAY": "MON_CH2",
-                    "MON_HST_B_NDELAY": "MON_CH3",
-                    "MON_HST_RO_IBIAS": "MON_CH4",
-                    "MON_HST_OSC_VREF_IN": "MON_CH5",
-                    "MON_HST_B_PDELAY": "MON_CH6",
-                    "MON_HST_OSC_CTL": "MON_CH7",
-                    "MON_HST_A_NDELAY": "MON_CH8",
-                }
-            )
-            # Read-only; identifies controls corresponding to monitors
-            self.monitor_controls = OrderedDict(
-                {
-                    "MON_CH2": "POT2",
-                    "MON_CH3": "POT3",
-                    "MON_CH4": "POT4",
-                    "MON_CH5": "POT5",
-                    "MON_CH6": "POT6",
-                    "MON_CH7": "POT7",
-                    "MON_CH8": "POT8",
-                    # Note: VRST is not measured across the pot; it will read a voltage
-                    #   approximately 1 Volt lower than pot13's actual output
-                    "MON_VRST": "POT13",
-                }
-            )
-        else:  # Daedalus
-            self.subreg_aliases = OrderedDict(
-                {
-                    "HST_OSC_CTL": "POT4",
-                    "HST_RO_NC_IBIAS": "POT5",
-                    "HST_OSC_VREF_IN": "POT6",
-                    "VAB": "POT11",
-                    "MON_TSENSEOUT": "MON_CH2",
-                    "MON_BGREF": "MON_CH3",
-                    "MON_HST_OSC_CTL": "MON_CH4",
-                    "MON_HST_RO_NC_IBIAS": "MON_CH5",
-                    "MON_HST_OSC_VREF_IN": "MON_CH6",
-                    "MON_COL_TST_IN": "MON_CH7",
-                    "MON_HST_OSC_PBIAS_PAD": "MON_CH8",
-                }
-            )
-            # Read-only; identifies controls corresponding to monitors
-            self.monitor_controls = OrderedDict(
-                {
-                    "MON_CH4": "POT4",
-                    "MON_CH5": "POT5",
-                    "MON_CH6": "POT6",
-                    # Note: VRST is not measured across the pot; it will read a voltage
-                    #   lower than pot13's actual output
-                    "MON_VRST": "POT13",
-                }
-            )
+
+        self.icarus_subreg_aliases = OrderedDict(
+            {
+                "COL_BOT_IBIAS_IN": "POT1",
+                "HST_A_PDELAY": "POT2",
+                "HST_B_NDELAY": "POT3",
+                "HST_RO_IBIAS": "POT4",
+                "HST_OSC_VREF_IN": "POT5",
+                "HST_B_PDELAY": "POT6",
+                "HST_OSC_CTL": "POT7",
+                "HST_A_NDELAY": "POT8",
+                "COL_TOP_IBIAS_IN": "POT9",
+                "HST_OSC_R_BIAS": "POT10",
+                "VAB": "POT11",
+                "HST_RO_NC_IBIAS": "POT12",
+                "VRST": "POT13",
+                "MON_HST_A_PDELAY": "MON_CH2",
+                "MON_HST_B_NDELAY": "MON_CH3",
+                "MON_HST_RO_IBIAS": "MON_CH4",
+                "MON_HST_OSC_VREF_IN": "MON_CH5",
+                "MON_HST_B_PDELAY": "MON_CH6",
+                "MON_HST_OSC_CTL": "MON_CH7",
+                "MON_HST_A_NDELAY": "MON_CH8",
+            }
+        )
+        # Read-only; identifies controls corresponding to monitors
+        self.icarus_monitor_controls = OrderedDict(
+            {
+                "MON_CH2": "POT2",
+                "MON_CH3": "POT3",
+                "MON_CH4": "POT4",
+                "MON_CH5": "POT5",
+                "MON_CH6": "POT6",
+                "MON_CH7": "POT7",
+                "MON_CH8": "POT8",
+                # Note: VRST is not measured across the pot; it will read a voltage
+                #   approximately 1 Volt lower than pot13's actual output
+                "MON_VRST": "POT13",
+            }
+        )
+
+        self.daedalus_subreg_aliases = OrderedDict(
+            {
+                "HST_OSC_CTL": "POT4",
+                "HST_RO_NC_IBIAS": "POT5",
+                "HST_OSC_VREF_IN": "POT6",
+                "VAB": "POT11",
+                "MON_TSENSEOUT": "MON_CH2",
+                "MON_BGREF": "MON_CH3",
+                "MON_HST_OSC_CTL": "MON_CH4",
+                "MON_HST_RO_NC_IBIAS": "MON_CH5",
+                "MON_HST_OSC_VREF_IN": "MON_CH6",
+                "MON_COL_TST_IN": "MON_CH7",
+                "MON_HST_OSC_PBIAS_PAD": "MON_CH8",
+            }
+        )
+        # Read-only; identifies controls corresponding to monitors
+        self.daedalus_monitor_controls = OrderedDict(
+            {
+                "MON_CH4": "POT4",
+                "MON_CH5": "POT5",
+                "MON_CH6": "POT6",
+                # Note: VRST is not measured across the pot; it will read a voltage
+                #   lower than pot13's actual output
+                "MON_VRST": "POT13",
+            }
+        )
 
         self.subreglist = []
         for s in self.subregisters:
@@ -361,7 +319,7 @@ class llnl_v1:
         Returns:
             tuple (error string, response string) from final control message
         """
-        logging.info(self.loginfo + "initBoard")
+        logging.info(self.loginfo + "initBoard LLNLv1")
         control_messages = [("LED_EN", "1")]
 
         self.clearStatus()
@@ -451,7 +409,7 @@ class llnl_v1:
             tuple (error string, response string) from final control message
         """
         logging.info(self.loginfo + "initSensor")
-        if self.ca.FPGANum[7] is not self.ca.sensor.fpganumID:
+        if int(self.ca.FPGANum[7]) != self.ca.sensor.fpganumID:
             logging.error(
                 self.logerr + "unable to confirm sensor compatibility with FPGA"
             )
@@ -471,8 +429,8 @@ class llnl_v1:
         self.ca.checkSensorVoltStat()
         control_messages = self.ca.sensorSpecific() + [
             # ring w/caps=01, relax=00, ring w/o caps = 02
-            ("FPA_OSCILLATOR_SEL_ADDR", "00000000"),
-            ("FPA_DIVCLK_EN_ADDR", "00000001"),
+            ("OSC_SELECT", "00"),
+            ("FPA_DIVCLK_EN_ADDR", "00000001"),  # TODO Make this a subregister
         ]
         return self.ca.submitMessages(control_messages, " initSensor: ")
 
@@ -487,15 +445,9 @@ class llnl_v1:
 
         control_messages = [
             # just in case ADC_RESET was set (pull all ADCs out # of reset)
-            (
-                "ADC_RESET",
-                "00000000",
-            ),
+            ("ADC_RESET", "00000000"),
             # workaround for uncertain behavior after previous readoff
-            (
-                "ADC1_CONFIG_DATA",
-                "FFFFFFFF",
-            ),
+            ("ADC1_CONFIG_DATA", "FFFFFFFF"),
             ("ADC2_CONFIG_DATA", "FFFFFFFF"),
             ("ADC3_CONFIG_DATA", "FFFFFFFF"),
             ("ADC4_CONFIG_DATA", "FFFFFFFF"),
@@ -511,7 +463,7 @@ class llnl_v1:
     def softReboot(self):
         """
         Perform software reboot of board. WARNING: board reboot will likely prevent
-          correct response and therefore will generate an error message
+          correct communication reponses and therefore will generate an error message
 
         Returns:
             tuple (error string, response string) from final control message
@@ -533,14 +485,17 @@ class llnl_v1:
         self.ca.armed = False
         control_messages = [
             ("HW_TRIG_EN", "0"),
-            ("DUAL_EDGE_TRIG_EN", "0"),
             ("SW_TRIG_EN", "0"),
         ]
         return self.ca.submitMessages(control_messages, " disarm: ")
 
     def startCapture(self, mode="Hardware"):
         """
-        Reads ADC data into SRAM
+        Selects trigger mode and enables board for image capture
+
+        Args:
+            mode: trigger mode ("hardware"|"software"|"dual|"h"|"s"|"d" , is case-
+              insensitive)
 
         Returns:
             tuple (error string, response string) from final control message
@@ -551,22 +506,14 @@ class llnl_v1:
         else:
             timingReg = "HST_MODE"
 
-        if mode.upper() == "SOFTWARE":
+        if mode.upper()[0] == "S":  # SOFTWARE
             trigmess = [
                 ("HW_TRIG_EN", "0"),
-                ("DUAL_EDGE_TRIG_EN", "0"),
                 ("SW_TRIG_EN", "1"),
                 ("SW_TRIG_START", "1"),
             ]
-        elif mode.upper() == "DUAL":
-            trigmess = [
-                ("SW_TRIG_EN", "0"),
-                ("HW_TRIG_EN", "1"),
-                ("DUAL_EDGE_TRIG_EN", "1"),
-            ]
         else:  # HARDWARE
             trigmess = [
-                ("DUAL_EDGE_TRIG_EN", "0"),
                 ("SW_TRIG_EN", "0"),
                 ("HW_TRIG_EN", "1"),
             ]
@@ -632,6 +579,7 @@ class llnl_v1:
         Returns:
             timer value as integer
         """
+        logging.info(self.loginfo + "getTimer")
         err, rval = self.ca.getRegister("TIMER_VALUE")
         if err:
             logging.error(
@@ -660,8 +608,9 @@ class llnl_v1:
             status: 0 for disabled, 1 for enabled
 
         Returns:
-            tuple: (error string, response string from subregister set)
+            tuple: (error string, response string from setSubregister()
         """
+        logging.info(self.loginfo + "enableLED")
         if status:
             status = 1
         return self.ca.setSubregister("LED_EN", str(status))
@@ -675,8 +624,9 @@ class llnl_v1:
             status: 0 is off, 1 is on
 
         Returns:
-            tuple: (error string, response string from subregister set)
+            tuple: (error string, response string from setSubregister()
         """
+        logging.info(self.loginfo + "setLED")
         key = "LED" + str(LED)
         return self.ca.setSubregister(key, str(status))
 
@@ -688,43 +638,48 @@ class llnl_v1:
             status: setting for powersave option (1 is enabled)
 
         Returns:
-            tuple (error string, response string from subregister set)
+            tuple (error string, response string from setSubregister()
         """
+        logging.info(self.loginfo + "setPowerSave")
         if status:
             status = 1
         return self.ca.setSubregister("POWERSAVE", str(status))
 
-    def setPPER(self, time):
+    def setPPER(self, pollperiod):
         """
         Set polling period for ADCs.
         Args:
-            time: milliseconds, between 1 and 255, defaults to 50
+            pollperiod: milliseconds, between 1 and 255, defaults to 50
 
         Returns:
-            tuple (error string, response string from subregister set OR invalid time
+            tuple (error string, response string from setSubregister OR invalid time
               setting string)
         """
-        if not time:
-            time = 50
-        if not isinstance(time, int) or time < 1 or time > 255:
+        logging.debug(self.logdebug + "setPPER: time = " + str(pollperiod))
+        if pollperiod is None:
+            pollperiod = 50
+        if not isinstance(pollperiod, int) or pollperiod < 1 or pollperiod > 255:
             err = (
                 self.logerr + "invalid poll period submitted. Setting remains "
                 "unchanged. "
             )
             logging.error(err)
-            return err, str(time)
+            return err, str(pollperiod)
         else:
-            binset = bin(time)[2:].zfill(8)
+            binset = bin(pollperiod)[2:].zfill(8)
             return self.ca.setSubregister("PPER", binset)
 
-    def getTemp(self, scale):
+    def getTemp(self, scale=None, offset=None, slope=None):
         """
         Read temperature sensor
         Args:
             scale: temperature scale to report (defaults to C, options are F and K)
+            offset: unused
+            slope: unused
         Returns:
             temperature as float on given scale
         """
+        logging.debug(self.logdebug + "getTemp: scale = " + str(scale))
         err, rval = self.ca.getRegister("TEMP_SENSE_DATA")
         if err:
             logging.error(
@@ -763,6 +718,7 @@ class llnl_v1:
         Returns:
             error string
         """
+        logging.debug(self.logdebug + "clearStatus")
         err1, rval = self.ca.getRegister("STAT_REG_SRC")
         err2, rval = self.ca.getRegister("STAT_REG2_SRC")
         err = err1 + err2
@@ -778,6 +734,7 @@ class llnl_v1:
         Returns:
             bit string (no '0b') in reversed order
         """
+        logging.debug(self.logdebug + "checkStatus")
         err, rval = self.ca.getRegister("STAT_REG")
         if not rval:
             logging.error(
@@ -795,6 +752,7 @@ class llnl_v1:
 
         Returns: bit string (no '0b') in reversed order
         """
+        logging.debug(self.logdebug + "checkStatus2")
         err, rval = self.ca.getRegister("STAT_REG2")
         if not rval:
             logging.error(
@@ -813,46 +771,46 @@ class llnl_v1:
         statusbits2 = self.checkStatus2()
         logging.info(self.loginfo + "Status report:")
         if int(statusbits[0]):
-            logging.info(self.loginfo + "Sensor read complete")
+            print(self.loginfo + "Sensor read complete")
         if int(statusbits[1]):
-            logging.info(self.loginfo + "Coarse trigger detected")
+            print(self.loginfo + "Coarse trigger detected")
         if int(statusbits[2]):
-            logging.info(self.loginfo + "Fine trigger detected")
+            print(self.loginfo + "Fine trigger detected")
         if int(statusbits[5]):
-            logging.info(self.loginfo + "Sensor readout in progress")
+            print(self.loginfo + "Sensor readout in progress")
         if int(statusbits[6]):
-            logging.info(self.loginfo + "Sensor readout complete")
+            print(self.loginfo + "Sensor readout complete")
         if int(statusbits[7]):
-            logging.info(self.loginfo + "SRAM readout started")
+            print(self.loginfo + "SRAM readout started")
         if int(statusbits[8]):
-            logging.info(self.loginfo + "SRAM readout complete")
+            print(self.loginfo + "SRAM readout complete")
         if int(statusbits[9]):
-            logging.info(self.loginfo + "High-speed timing configured")
+            print(self.loginfo + "High-speed timing configuration started")
         if int(statusbits[10]):
-            logging.info(self.loginfo + "All ADCs configured")
+            print(self.loginfo + "All ADCs configured")
         if int(statusbits[11]):
-            logging.info(self.loginfo + "All pots configured")
+            print(self.loginfo + "All pots configured")
         if int(statusbits[13]):
-            logging.info(self.loginfo + "Timer has reset")
+            print(self.loginfo + "Timer has reset")
         if int(statusbits[14]):
-            logging.info(self.loginfo + "Camera is Armed")
-        self.ca.sensor.reportStatusSensor(statusbits)
+            print(self.loginfo + "Camera is Armed")
+        self.ca.sensor.reportStatusSensor(statusbits, statusbits2)
         temp = int(statusbits[27:15:-1], 2) / 16.0
         logging.info(
             self.loginfo + "Temperature reading: " + "{0:1.2f}".format(temp) + " C"
         )
-        press = int(statusbits[:27:-1], 2)
-        logging.info(self.loginfo + "Pressure reading: " + "{0:1.2f}".format(press))
+        # press = int(statusbits[:27:-1], 2)
+        # logging.info(self.loginfo + "Pressure reading: " + "{0:1.2f}".format(press))
         if int(statusbits2[0]):
-            logging.info(self.loginfo + "FPA_IF_TO")
+            print(self.loginfo + "FPA_IF_TO")
         if int(statusbits2[1]):
-            logging.info(self.loginfo + "INFO: [LLNL_v1] SRAM_RO_TO")
+            print(self.loginfo + "SRAM_RO_TO")
         if int(statusbits2[2]):
-            logging.info(self.loginfo + "PixelRd Timeout Error")
+            print(self.loginfo + "PixelRd Timeout Error")
         if int(statusbits2[3]):
-            logging.info(self.loginfo + "UART_TX_TO_RST")
+            print(self.loginfo + "UART_TX_TO_RST")
         if int(statusbits2[4]):
-            logging.info(self.loginfo + "UART_RX_TO_RST")
+            print(self.loginfo + "UART_RX_TO_RST")
 
     def reportEdgeDetects(self):
         """
@@ -902,12 +860,12 @@ class llnl_v1:
             }
         )
 
-        DACDict = OrderedDict()
+        POTDict = OrderedDict()
         MonDict = OrderedDict()
         for entry in self.subreg_aliases:
             if self.subreg_aliases[entry][0] == "P":
                 val = str(round(self.ca.getPotV(entry), 3)) + " V"
-                DACDict["POT_" + entry] = val
+                POTDict["POT_" + entry] = val
             else:
                 val = str(round(self.ca.getMonV(entry), 3)) + " V"
                 MonDict[entry] = val
@@ -924,12 +882,12 @@ class llnl_v1:
 
 
 """
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.  
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 """

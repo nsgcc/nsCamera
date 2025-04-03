@@ -5,16 +5,16 @@ RS422 driver for nsCamera
 Author: Brad Funsten (funsten1@llnl.gov)
 Author: Jeremy Martin Hill (jerhill@llnl.gov)
 
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 
-Version: 2.1.1  (July 2021)
+Version: 2.1.2 (February 2025)
 """
 
 import logging
@@ -23,6 +23,8 @@ import time  # to time the script
 
 import serial
 import serial.tools.list_ports  # for RS422 serial link setup
+
+from nsCamera.utils.misc import generateFrames, str2bytes, bytes2str, checkCRC
 
 
 class RS422:
@@ -33,8 +35,10 @@ class RS422:
 
     Exposed methods:
         arm() - Puts camera into wait state for external trigger
-        readoff() - Waits for data ready register flag, then copies camera image data
+        readFrames() - waits for data ready register flag, then copies camera image data
           into numpy arrays
+        readoff() - waits for data ready register flag, then copies camera image data
+          into numpy arrays; returns payload, payload size, and error message
         sendCMD(pkt) - sends packet object via serial port
         readSerial(size, timeout) - read 'size' bytes from serial port
         writeSerial(cmd) - submits string 'cmd' (assumes string is preformed packet)
@@ -55,33 +59,48 @@ class RS422:
         self.logwarn = self.ca.logwarnbase + "[RS422] "
         self.loginfo = self.ca.loginfobase + "[RS422] "
         self.logdebug = self.ca.logdebugbase + "[RS422] "
-        logging.info(self.loginfo + "initializing comms object")
+        logging.info(self.loginfo + "initializing RS422 comms object")
+        logging.debug(
+            self.logdebug
+            + "Init: baud = "
+            + str(baud)
+            + "; par = "
+            + str(par)
+            + "; stop = "
+            + str(stop)
+        )
         self.mode = 0
-        self._baud = baud  # Baud rate (bits/second)
-        self._par = par  # Parity bit
-        self._stop = stop  # Number of stop bits
-        self._read_timeout = 1  # default timeout for ordinary packets
-        self._write_timeout = 1
-        self._datatimeout = 5e7 * self.ca.sensor.nframes / baud  # timeout for data read
+        self.baud = baud  # Baud rate (bits/second)
+        self.par = par  # Parity bit
+        self.stop = stop  # Number of stop bits
+        self.read_timeout = 1  # default timeout for ordinary packets
+        self.write_timeout = 1
+        # TODO: make datatimeout a cameraAssembler parameter
+        self.datatimeout = 60  # timeout for data read
+        logging.debug(
+            self.logdebug + "Data timeout = " + str(self.datatimeout) + " seconds"
+        )
         self.PY3 = sys.version_info > (3,)
         self.skipError = False
         port = ""
         ports = list(serial.tools.list_ports.comports())
+        logging.debug(self.logdebug + "Comports: " + str(ports))
         for p, desc, add in ports:
             if self.ca.port is None or p == "COM" + str(self.ca.port):
                 logging.info(self.loginfo + "found comm port " + p)
                 try:
                     with serial.Serial(
                         p,
-                        self._baud,
-                        parity=self._par,
+                        self.baud,
+                        parity=self.par,
                         timeout=0.01,
                         write_timeout=0.01,
                     ) as ser:
-                        ser.write(self.ca.str2bytes("aaaa1000000000001a84"))
+                        ser.write(str2bytes("aaaa1000000000001a84"))
                         time.sleep(1)
                         s = ser.read(10)
-                        resp = self.ca.bytes2str(s)
+                        resp = bytes2str(s)
+                        logging.debug(self.logdebug + "Init response: " + str(resp))
                         if (
                             resp[0:5].lower() == "aaaa9"
                         ):  # TODO: add check for RS422 bit in board description
@@ -116,15 +135,15 @@ class RS422:
             else:
                 logging.critical(self.logcrit + "No usable board found")
                 sys.exit(1)
-        self._port = port  # COM port to use for RS422 link
+        self.port = port  # COM port to use for RS422 link
         self.ca.port = port[3:]  # re-extract port number from com name
 
         self._ser = serial.Serial(  # Class RS422
-            port=self._port,
-            baudrate=self._baud,
-            parity=self._par,
-            stopbits=self._stop,
-            timeout=self._read_timeout,  # timeout for serial read
+            port=self.port,
+            baudrate=self.baud,
+            parity=self.par,
+            stopbits=self.stop,
+            timeout=self.read_timeout,  # timeout for serial read
             bytesize=serial.EIGHTBITS,
         )
         self.payloadsize = (
@@ -132,6 +151,9 @@ class RS422:
             * self.ca.sensor.height
             * self.ca.sensor.nframes
             * self.ca.sensor.bytesperpixel
+        )
+        logging.debug(
+            self.logdebug + "Payload size: " + str(self.payloadsize) + " bytes"
         )
         self._ser.flushInput()
         if not self._ser.is_open:
@@ -142,12 +164,13 @@ class RS422:
         """
         Close serial interface
         """
+        logging.debug(self.logdebug + "serialclose")
         self._ser.close()  # close serial interface COM port
 
     def sendCMD(self, pkt):
         """
-        Submit packet and verify response packet. Recognizes readoff packet and adjusts.
-        Read size and timeout appropriately
+        Submit packet and verify response packet. Recognizes readoff packet and adjusts
+        read size and timeout appropriately
 
         Args:
             pkt: Packet object
@@ -156,6 +179,7 @@ class RS422:
             tuple (error, response string)
         """
         pktStr = pkt.pktStr()
+        logging.debug(self.logdebug + "sendCMD packet: " + str(pktStr))
         self._ser.flushInput()
         time.sleep(0.01)  # wait 10 ms in between flushing input and output buffers
         self._ser.flushOutput()
@@ -163,13 +187,14 @@ class RS422:
         err0 = ""
         err = ""
         resp = ""
-        tries = 3  # make a function parameter?
+        tries = 3  # TODO: make a function parameter?
 
         if (
             hasattr(self.ca, "board")
             and pktStr[4] == "0"
             and pktStr[5:8] == self.ca.board.registers["SRAM_CTL"]
         ):
+            # download data payload
             logging.info(
                 self.loginfo + "Payload size (bytes) = " + str(self.payloadsize)
             )
@@ -178,9 +203,10 @@ class RS422:
             smallresp = ""
             emptyResponse = False
             wrongSize = False
+            # TODO: refactor payload error management to another method
             for i in range(tries):
                 err, resp = self.readSerial(
-                    self.payloadsize + 20, timeout=self._datatimeout
+                    self.payloadsize + 20, timeout=self.datatimeout
                 )
                 if err:
                     logging.error(
@@ -205,7 +231,7 @@ class RS422:
                         wrongSize = True
                         smallresp = resp
                         self.ca.payloaderror = True
-                    elif not self.ca.checkCRC(resp[4:20]):
+                    elif not checkCRC(resp[4:20]):
                         err0 = (
                             self.logerr
                             + "sendCMD: "
@@ -215,7 +241,7 @@ class RS422:
                         logging.error(err0)
                         self.ca.payloaderror = True
                         crcresp1 = resp
-                    elif not self.ca.checkCRC(resp[24:]):
+                    elif not checkCRC(resp[24:]):
                         err0 = (
                             self.logerr + "sendCMD: " + pktStr + " - payload CRC fail"
                         )
@@ -225,11 +251,10 @@ class RS422:
                     err += err0
                 time.sleep(5)
                 if self.ca.payloaderror:
-                    if (
-                        i == tries - 1
-                    ):  # keep best results over multiple tries; e.g., if first try is
-                        #   bad CRC and second try is an incomplete payload, use the
-                        #   first payload
+                    # keep best results over multiple tries; e.g., if first try is
+                    #   bad CRC and second try is an incomplete payload, use the
+                    #   first payload
+                    if i == tries - 1:
                         if crcresp0:
                             logging.error(
                                 self.logerr + "sendCMD: Unable to acquire "
@@ -270,32 +295,36 @@ class RS422:
                         self.ca.writeSerial(pktStr)
                 else:
                     logging.info(self.loginfo + "Download successful")
+                    if self.ca.boardname == "llnl_v4":
+                        # self.ca.setSubregister('SWACK','1')
+                        pass
                     break
 
         else:
+            # non-payload messages and workaround for initial setup before board object
+            #   has been initialized
             time.sleep(0.03)
             self._ser.timeout = 0.02
             err, resp = self.readSerial(10)
+            logging.debug(self.logdebug + "sendCMD response: " + str(resp))
             if err:
                 logging.error(
                     self.logerr + "sendCMD: readSerial failed (regular packet) " + err
                 )
-            elif not self.ca.checkCRC(resp[4:20]):
+            elif not checkCRC(resp[4:20]):
                 err = self.logerr + "sendCMD- regular packet CRC fail: " + resp
                 logging.error(err)
         return err, resp
 
     def arm(self, mode):
         """
-        Puts camera into wait state for trigger. Mode determines source; arm() in
-          CameraAssembler defaults to 'Hardware'
+        Puts camera into wait state for trigger. Mode determines source; defaults to
+          'Hardware'
 
         Args:
-            mode:   'Software' activates software triggering, disables hardware trigger
-                    'Hardware' activates hardware triggering, disables software trigger
+            mode:   'Software'|'S' activates software, disables hardware triggering
+                    'Hardware'|'H' activates hardware, disables software triggering
                       Hardware is the default
-                    'Dual' activates dual edge hardware trigger mode and disables
-                      software trigger
 
         Returns:
             tuple (error, response string)
@@ -303,6 +332,7 @@ class RS422:
         if not mode:
             mode = "Hardware"
         logging.info(self.loginfo + "arm")
+        logging.debug(self.logdebug + "arming mode: " + str(mode))
         self.ca.clearStatus()
         self.ca.latchPots()
         err, resp = self.ca.startCapture(mode)
@@ -313,9 +343,10 @@ class RS422:
             self.skipError = True
         return err, resp
 
-    def readoff(self, waitOnSRAM, timeout, fast):
+    def readFrames(self, waitOnSRAM, timeout=0, fast=False, columns=1):
         """
-        Copies image data from board into numpy arrays
+        Copies image data from board into numpy arrays.
+
         Args:
             waitOnSRAM: if True, wait until SRAM_READY flag is asserted to begin copying
               data
@@ -325,6 +356,31 @@ class RS422:
                 but the code will copy the data anyway
             fast: if False, parse and convert frames to numpy arrays; if True, return
               unprocessed text stream
+            columns: 1 for single image per frame, 2 for separate hemisphere images
+
+        Returns:
+            list of numpy arrays OR raw text stream
+
+        """
+        frames, _, _ = self.readoff(waitOnSRAM, timeout, fast, columns)
+        return frames
+
+    def readoff(self, waitOnSRAM, timeout, fast, columns=1):
+        """
+        Copies image data from board into numpy arrays; returns data, length of data,
+        and error messages. Use 'readFrames()' unless you require this additional
+        information
+
+        Args:
+            waitOnSRAM: if True, wait until SRAM_READY flag is asserted to begin copying
+              data
+            timeout: passed to waitForSRAM; after this many seconds begin copying data
+              irrespective of SRAM_READY status; 'zero' means wait indefinitely
+              WARNING: If acquisition fails, the SRAM will not contain a current image,
+                but the code will copy the data anyway
+            fast: if False, parse and convert frames to numpy arrays; if True, return
+              unprocessed text stream
+            columns: 1 for single image per frame, 2 for separate hemisphere images
 
         Returns:
             tuple (list of numpy arrays OR raw text stream, length of downloaded payload
@@ -333,11 +389,20 @@ class RS422:
               when using RS422
         """
         logging.info(self.loginfo + "readoff")
+        logging.debug(
+            self.logdebug
+            + "readoff: waitonSRAM = "
+            + str(waitOnSRAM)
+            + "; timeout = "
+            + str(timeout)
+            + "; fast = "
+            + str(fast)
+        )
         errortemp = False
 
         # Wait for data to be ready on board, turns off error messaging
         # Skip wait only if explicitly tagged 'False' ('None' defaults to True)
-        if not waitOnSRAM == False:
+        if waitOnSRAM is not False:
             logging.getLogger().setLevel(logging.CRITICAL)
             self.ca.waitForSRAM(timeout)
             logging.getLogger().setLevel(self.ca.verblevel)
@@ -347,33 +412,58 @@ class RS422:
         if err:
             logging.error(self.logerr + "Error detected in readSRAM")
         time.sleep(0.3)
+        logging.debug(self.logdebug + "readoff: first 64 chars: " + str(rval[0:64]))
         # extract only the read burst data. Remove header & CRC footer
         read_burst_data = rval[36:-4]
+
+        # Payload size as string implied by provided parameters
+        expectedlength = (
+            4
+            * (self.ca.sensor.lastframe - self.ca.sensor.firstframe + 1)
+            * (self.ca.sensor.lastrow - self.ca.sensor.firstrow + 1)
+            * self.ca.sensor.width
+        )
+        padding = expectedlength - len(read_burst_data)
+        if padding:
+            logging.warning(
+                "{logwarn}readoff: Payload is shorter than expected."
+                " Padding with '0's".format(logwarn=self.logwarn)
+            )
+            read_burst_data = read_burst_data.ljust(expectedlength, "0")
 
         if fast:
             return read_burst_data, len(read_burst_data) // 2, errortemp
         else:
-            parsed = self.ca.generateFrames(read_burst_data)
+            parsed = generateFrames(self.ca, read_burst_data, columns)
             return parsed, len(read_burst_data) // 2, errortemp
 
     def writeSerial(self, outstring, timeout):
         """
+        Transmit string to board
+
         Args:
             outstring: string to write
             timeout: serial timeout in sec
         Returns:
             integer length of string written to serial port
         """
+        logging.debug(
+            self.logdebug
+            + "writeSerial: outstring = "
+            + str(outstring)
+            + "; timeout = "
+            + str(timeout)
+        )
         if timeout:
             self._ser.timeout = timeout
         else:
-            self._ser.timeout = self._write_timeout
-        lengthwritten = self._ser.write(self.ca.str2bytes(outstring))
-        self._ser.timeout = self._read_timeout
+            self._ser.timeout = self.write_timeout
+        lengthwritten = self._ser.write(str2bytes(outstring))
+        self._ser.timeout = self.read_timeout  # reset if changed above
         return lengthwritten
 
     def readSerial(self, size, timeout=None):
-        """ "
+        """
         Read bytes from the serial port. Does not verify packets.
 
         Args:
@@ -383,36 +473,41 @@ class RS422:
         Returns:
            tuple (error string, string read from serial port)
         """
+        logging.debug(
+            self.logdebug
+            + "readSerial: size = "
+            + str(size)
+            + "; timeout = "
+            + str(timeout)
+        )
         err = ""
         if timeout:
             self._ser.timeout = timeout
         else:
-            self._ser.timeout = self._read_timeout
+            self._ser.timeout = self.read_timeout
         resp = self._ser.read(size)
         if len(resp) < 10:  # bytes
             err += (
-                self.logerr
-                + "readSerial : packet too small: '"
-                + self.ca.bytes2str(resp)
-                + "'"
+                self.logerr + "readSerial : packet too small: '" + bytes2str(resp) + "'"
             )
             logging.error(err)
-        return err, self.ca.bytes2str(resp)
+        return err, bytes2str(resp)
 
     def closeDevice(self):
         """
         Close primary serial interface
         """
+        logging.debug(self.logdebug + "Closing RS422 connection")
         self._ser.close()
 
 
 """
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.  
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 """

@@ -7,25 +7,23 @@ controls a combination of three components:
 2. comms: communication interface -- GigE, RS422
 3. sensor : sensor type -- icarus, icarus2, daedalus
 
-Author: Matthew Dayton (dayton5@llnl.gov)
 Author: Jeremy Martin Hill (jerhill@llnl.gov)
+Author: Matthew Dayton (dayton5@llnl.gov)
 
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 
-Version: 2.1.1  (July 2021)
+Version: 2.1.2 (February 2025)
 """
 
 from __future__ import absolute_import
 
-import binascii
-import collections
 import importlib
 import inspect
 import logging
@@ -34,14 +32,28 @@ import platform
 import socket
 import sys
 import time
+import h5py
 from datetime import datetime
 
-import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
 
-from nsCamera.utils import crc16pure
+from nsCamera.utils.misc import (
+    bytes2str,
+    checkCRC,
+    flattenlist,
+    generateFrames,
+    getEnter,
+    partition,
+    plotFrames,
+    saveTiffs,
+    str2bytes,
+    str2nparray,
+)
+
 from nsCamera.utils.Packet import Packet
+
+# TODO: move to Sphinx documentation
+# TODO: add pytest and tox scripts
 
 
 class CameraAssembler:
@@ -55,8 +67,6 @@ class CameraAssembler:
         getBoardInfo() - parses FPGA_NUM register to retrieve board description
         getRegister(regname) - retrieves contents of named register
         setRegister(regname, string) - sets named register to given value
-        resolveSubreg(srname) - resolves alias and retrieves object associated with
-          srname
         getSubregister(subregname) - return substring of register identified in board
           attribute 'subregname'
         setSubregister(subregname, valstring) - replace substring of register identified
@@ -72,47 +82,22 @@ class CameraAssembler:
         getMonV(monname) - returns voltage read by monitor 'monname' (or monitor
           associated with given potname)
         readImgs() - calls arm() and readoff() functions
-        deInterlace(frames, interlacing) - extract interlaced frames
         saveFrames(frames) - save image object as one file
-        saveTiffs(frames) - save individual frames as tiffs
         saveNumpys(frames) - save individual frames as numpy data files
         dumpNumpy(datastream) - save datastream string to numpy file
-        plotFrames(frames) - plot individual frames as tiffs
-        checkCRC(string) - checks last four characters of string is valid CRC for rest
-          of string
-        checkRegSet(register, string) - test set and get register functions for named
-          register
-        initPowerCheck() - start timers for power continutity check
         powerCheck(delta) - check that board power has not failed
-        dummyCheck(image, margin) - counts how many pixels differ from expected dummy
-          sensor values by more than margin
         printBoardInfo() - print board information derived from FPGA_NUM register
         dumpRegisters() - return contents of all board registers
         dumpSubregisters() - return contents of all named board subregisters
-        str2bytes(string) - convert hexadecimal string to byte string
-        bytes2str(sequence) - convert byte sequence to hexadecimal string
-        str2nparray(string) - convert string of hexadecimal values into uint16 array
-        flatten(llist) - flattens list of lists into single list
-        getEnter(text) - print text, then wait for Enter keypress
-        mmReadoff(waitflag, variation) - convenience function for MicroManager plugin
         setFrames(min, max) - select subset of frames for readoff
-        setRows(min, max, fullsize) - select subset of rows for readoff
-        generateFrames(data) - processes data stream from board into frames
+        setRows(min, max, padToFull) - select subset of rows for readoff
         abortReadoff() - cancel readoff in wait-for-SRAM loop
         batchAquire() - fast acquire a finite series of images
         loadTextFrames() - load data sets previously saved as text and convert to frames
 
-    Includes aliases to board- and sensor- specific functions:
-        Board functions
-            initBoard() - initialize default board register settings and configures ADCs
-            initPots() - configure default pot settings before image acquisition
-            latchPots() - latch all pot settings into sensor
-            initSensor() - register sensor, set default timing settings
-            configADCs() - set default ADC configuration
-            startCapture() - reads ADC data into SRAM
+    Includes aliases to board- and sensor- specific methods:
+        Board methods
             disarm() - take camera out of waiting-for-trigger state
-            readSRAM() - trigger read from SRAM
-            waitForSRAM() - puts board in wait state until data are ready in SRAM
             clearStatus() - clear contents of status registers
             checkStatus() - print contents of status register as reversed bit string
             checkStatus2() - print contents of status register 2 as reversed bit string
@@ -123,48 +108,44 @@ class CameraAssembler:
             setLED(LED#, status) - turn LED on (default) or off (status = 0)
             setPowerSave(status) - turn powersave functionality on (default) or off
               (status = 0)
-            getPressure() - read on-board pressure sensor
             getTemp() - read on-board temperature sensor
-            checkStatus() - read and return status bits in status register 1
-            checkStatus2() - read and return status bits in status register 2
-            clearStatus() - clear status registers 1 and 2
-            reportStatus() - print out human-readable board status report based on
-              status registers
-        Sensor functions
+            getPressure() - read on-board pressure sensor
+            dumpStatus() - generate dictionary of status, register, and subregister
+              contents
+        Sensor methods
             checkSensorVoltStat() - checks that jumper settings match sensor selection
             setTiming(side, sequencetuple, delay) - configure high-speed timing
             setArbTiming(side, sequencelist) - configure arbitrary high-speed timing
               sequence
             getTiming(side) - returns high speed timing settings from registers
-            setManualShutters() - configures manual shutter timing
+            setManualTiming() - configures manual shutter timing
             getManualTiming() - returns manual shutter settings from registers
-            sensorSpecific() - returns register settings specific to implemented sensor
+            selectOscillator(osc) - select timing oscillator
             setInterlacing(ifactor) - sets interlacing factor
             setHighFullWell(flag) - controls High Full Well mode
-            setZeroDeadTime(flag) - controls Zero Dead Time mode
+            setZeroDeadTime(flag, side) - controls Zero Dead Time mode
             setTriggerDelay(delayblocks) - sets trigger delay
-            parseReadoff(frames) - performs sensor-specific parsing and separation of
-              images
-        Comms functions
+        Comms methods
             sendCMD(pkt)- sends packet object via serial port
             arm() - configures software buffers & arms camera
+            readFrames() - waits for data ready flag, then downloads image data
             readoff() - waits for data ready flag, then downloads image data
-            writeSerial(cmdString)- submits string 'cmdstring' (usually string is
-              preformed packet)
-            readSerial(stringlength) - reads string of length 'stringlength' from serial
-              port
             closeDevice() - disconnect interface and release resources
+        Miscellaneous functions (bare functions that can be called as methods)
+            saveTiffs(frames) - save individual frames as tiffs
+            plotFrames(frames) - plot individual frames as tiffs
+
     Informational class variables:
         version - nsCamera software version
         FPGAVersion - firmware version (date)
         FPGANum - firmware implementation identifier
         FPGAboardtype - FPGA self-identified board type (should match 'boardname')
-        FPGArad = Boolean indicating radiation-tolerant FPGA build
+        FPGArad = Flag indicating radiation-tolerant FPGA build
         FPGAsensor = FPGA self-identified sensor family (should correspond to
           'sensorname')
         FPGAinterfaces = FPGA self-identified interfaces (list should include
           'commname')
-        FPGAinvalid = invalid FPGA information in register
+        FPGAinvalid = flag indicating invalid FPGA information in register
     """
 
     def __init__(
@@ -177,6 +158,7 @@ class CameraAssembler:
         ip=None,
         logfile=None,
         logtag=None,
+        timeout=30,
     ):
         """
         Args:
@@ -193,20 +175,23 @@ class CameraAssembler:
                 3: print WARNING logging messages (camera will operate as directed, but
                   perhaps not as expected, e.g., ca.setTiming('A', (9, 8), 1) may be
                   programmed correctly, but the actual timing generated by the board
-                  will be {1} [9, 8, 9, 14, 9, 8, 9]
+                  will be {1} [9, 8, 9, 14, 9, 8, 9])
                 4: print INFO logging messages (operational messages from ordinary
                   camera operation)
+                5. print DEBUG logging messages (detailed messages describing specific
+                  operations and messages)
             port: optional integer
-                RS422: preselects comport for RS422, bypasses port search
-                GigE: preselect OrangeTree control port for GigE (ignored if ip option
-                  not also given)
+                When using RS422, this preselects the comport for RS422 and bypasses
+                  port search
+                When using GigE, this preselects the OrangeTree control port for GigE
+                  (ignored if an ip parameter is not also provided)
             ip: optional string (e.g., '192.168.1.100')
                 GigE: bypasses network search and selects particular OrangeTree board -
                   required for some operating systems
             logfile: optional string, name of file to divert console output
-            errtag: suffix to add to logging labels
+            timeout: timeout in seconds for connecting using Gigabit Ethernet
         """
-        self.version = "2.1.1"
+        self.version = "2.1.2"
         self.currtime = 0
         self.oldtime = 0
         self.trigtime = []
@@ -217,13 +202,25 @@ class CameraAssembler:
         self.savetime = []
         self.cycle = []
         self.boardname = boardname.lower()
-        if self.boardname == "llnlv1":
+        self.timeout = timeout
+        # TODO: parse boardname, etc. in separate method
+        if self.boardname in ["llnlv1", "v1", "1", 1]:
             self.boardname = "llnl_v1"
-        if self.boardname == "llnlv4":
+        if self.boardname in ["llnlv4", "v4", "4", 4]:
             self.boardname = "llnl_v4"
         self.commname = commname.lower()
+        if self.commname[0] == "g" or self.commname[0] == "e":
+            self.commname = "gige"
+        if self.commname[0] == "r":
+            self.commname = "rs422"
         self.sensorname = sensorname.lower()
-        self.verbose = verbose
+        if self.sensorname in ["i1", "ic1", "icarus1"]:
+            self.sensorname = "icarus"
+        if self.sensorname in ["i2", "ic2"]:
+            self.sensorname = "icarus2"
+        if self.sensorname == "d":
+            self.sensorname = "daedalus"
+        self.verbose = int(verbose)
         self.port = port
         self.python, self.pyth1, self.pyth2, _, _ = sys.version_info
         self.PY3 = self.python >= 3
@@ -265,17 +262,18 @@ class CameraAssembler:
         if logtag is None:
             logtag = ""
         self.logtag = logtag
-        self.logcritbase = "CRITICAL" + self.logtag + ": "
-        self.logerrbase = "ERROR" + self.logtag + ": "
-        self.logwarnbase = "WARNING" + self.logtag + ": "
-        self.loginfobase = "INFO" + self.logtag + ": "
-        self.logdebugbase = "DEBUG" + self.logtag + ": "
 
-        self.logcrit = self.logcritbase + "[CA] "
-        self.logerr = self.logerrbase + "[CA] "
-        self.logwarn = self.logwarnbase + "[CA] "
-        self.loginfo = self.loginfobase + "[CA] "
-        self.logdebug = self.logdebugbase + "[CA] "
+        self.logcritbase = "CRITICAL {logtag}: ".format(logtag=logtag)
+        self.logerrbase = "ERROR {logtag}: ".format(logtag=logtag)
+        self.logwarnbase = "WARNING {logtag}: ".format(logtag=logtag)
+        self.loginfobase = "INFO {logtag}: ".format(logtag=logtag)
+        self.logdebugbase = "DEBUG {logtag}: ".format(logtag=logtag)
+
+        self.logcrit = "{lb}[CA]".format(lb=self.logcritbase)
+        self.logerr = "{lb}[CA]".format(lb=self.logerrbase)
+        self.logwarn = "{lb}[CA]".format(lb=self.logwarnbase)
+        self.loginfo = "{lb}[CA]".format(lb=self.loginfobase)
+        self.logdebug = "{lb}[CA]".format(lb=self.logdebugbase)
 
         self.verblevel = self.verbmap.get(verbose, 5)  # defaults to 5 for invalid entry
 
@@ -285,12 +283,31 @@ class CameraAssembler:
             logging.basicConfig(format="%(message)s")
         logging.getLogger().setLevel(self.verblevel)
         logging.getLogger("matplotlib.font_manager").disabled = True
+        logging.debug(
+            "{logdebug}CameraAssembler: boardname = {boardname}; commname = {commname};"
+            " sensorname = {sensorname}; verbose = {verbose}; port = {port}; ip = {ip};"
+            " logfile = {logfile}; logtag = {logtag}".format(
+                logdebug=self.logdebug,
+                boardname=boardname,
+                commname=commname,
+                sensorname=sensorname,
+                verbose=verbose,
+                port=port,
+                ip=ip,
+                logfile=logfile,
+                logtag=logtag,
+            )
+        )
 
         if ip:
             try:
                 iphex = socket.inet_aton(ip)
             except socket.error:
-                logging.critical(self.logcrit + "CameraAssembler: invalid IP provided")
+                logging.critical(
+                    "{logcrit}CameraAssembler: invalid IP provided".format(
+                        logcrit=self.logcrit
+                    )
+                )
                 sys.exit(1)
             ipnum = [0, 0, 0, 0]
             for i in range(4):
@@ -301,9 +318,13 @@ class CameraAssembler:
             self.iplist = ipnum
 
         self.payloaderror = False
+
+        # code pulled out of __init__ to facilitate reinitialization of the board
+        #   without needing to instantiate a new CameraAssembler object
         self.initialize()
 
     ##### Aliases to other objects' methods
+    #  TODO: properly delegate these methods
 
     def initBoard(self):
         return self.board.initBoard()
@@ -347,8 +368,8 @@ class CameraAssembler:
     def setPowerSave(self, status=1):
         return self.board.setPowerSave(status)
 
-    def setPPER(self, time=None):
-        return self.board.setPPER(time)
+    def setPPER(self, pollperiod=None):
+        return self.board.setPPER(pollperiod)
 
     def getTemp(self, scale=None):
         return self.board.getTemp(scale)
@@ -377,38 +398,53 @@ class CameraAssembler:
     def checkSensorVoltStat(self):
         return self.sensor.checkSensorVoltStat()
 
-    def setTiming(self, side=None, sequence=None, delay=None):
+    def setTiming(self, side="AB", sequence=None, delay=0):
         return self.sensor.setTiming(side, sequence, delay)
 
-    def setArbTiming(self, side=None, sequence=None):
+    def setArbTiming(self, side="AB", sequence=None):
         return self.sensor.setArbTiming(side, sequence)
 
     def getTiming(self, side=None, actual=None):
         return self.sensor.getTiming(side, actual)
 
     def setManualShutters(self, timing=None):
-        return self.sensor.setManualShutters(timing)
+        return self.sensor.setManualTiming(timing)
+
+    def setManualTiming(self, timing=None):
+        return self.sensor.setManualTiming(timing)
 
     def getManualTiming(self):
         return self.sensor.getManualTiming()
 
+    def getSensTemp(self, scale=None, offset=None, slope=None, dec=1):
+        return self.sensor.getSensTemp(scale, offset, slope, dec)
+
     def sensorSpecific(self):
         return self.sensor.sensorSpecific()
 
-    def setInterlacing(self, ifactor=None):
-        return self.sensor.setInterlacing(ifactor)
+    def selectOscillator(self, osc=None):
+        return self.sensor.selectOscillator(osc)
+
+    def setInterlacing(self, ifactor=None, side=None):
+        return self.sensor.setInterlacing(ifactor, side)
 
     def setHighFullWell(self, flag=True):
         return self.sensor.setHighFullWell(flag)
 
-    def setZeroDeadTime(self, flag=True):
-        return self.sensor.setZeroDeadTime(flag)
+    def setZeroDeadTime(self, flag=True, side=None):
+        return self.sensor.setZeroDeadTime(flag, side)
 
-    def setTriggerDelay(self, delayblocks=0):
-        return self.sensor.setTriggerDelay(delayblocks)
+    def setTriggerDelay(self, delay=0):
+        return self.sensor.setTriggerDelay(delay)
 
-    def parseReadoff(self, frames):
-        return self.sensor.parseReadoff(frames)
+    def setPhiDelay(self, side=None, delay=0):
+        return self.sensor.setPhiDelay(side, delay)
+
+    def setExtClk(self, dilation=None, frequency=None):
+        return self.sensor.setExtClk(dilation, frequency)
+
+    def parseReadoff(self, frames, columns=1):
+        return self.sensor.parseReadoff(frames, columns)
 
     def sendCMD(self, pkt):
         return self.comms.sendCMD(pkt)
@@ -416,8 +452,12 @@ class CameraAssembler:
     def arm(self, mode=None):
         return self.comms.arm(mode)
 
-    def readoff(self, waitOnSRAM=None, timeout=0, fast=None):
-        return self.comms.readoff(waitOnSRAM, timeout, fast)
+    def readFrames(self, waitOnSRAM=None, timeout=0, fast=False, columns=1):
+        frames, _, _ = self.comms.readoff(waitOnSRAM, timeout, fast, columns)
+        return frames
+
+    def readoff(self, waitOnSRAM=None, timeout=0, fast=None, columns=1):
+        return self.comms.readoff(waitOnSRAM, timeout, fast, columns)
 
     def writeSerial(self, cmd, timeout=None):
         return self.comms.writeSerial(cmd, timeout)
@@ -428,17 +468,45 @@ class CameraAssembler:
     def closeDevice(self):
         return self.comms.closeDevice()
 
+    def saveTiffs(self, frames, path=None, filename="Frame", prefix=None, index=None):
+        return saveTiffs(self, frames, path, filename, prefix, index)
+
+    def plotFrames(self, frames, index=None):
+        return plotFrames(self, frames, index)
+
+    def getEnter(self, text):
+        return getEnter(text)
+
+    def checkCRC(self, rval):
+        return checkCRC(rval)
+
+    def str2bytes(self, astring):
+        return str2bytes(astring)
+
+    def bytes2str(self, bytesequence):
+        return bytes2str(bytesequence)
+
+    def str2nparray(self, valstring):
+        return str2nparray(valstring)
+
+    def flattenlist(self, mylist):
+        return flattenlist(mylist)
+
+    def partition(self, frames, columns):
+        return partition(self, frames, columns)
+
     ############## End aliases
 
     def initialize(self):
         """
         Initialize board registers and set pots
         """
-
+        # TODO: automate sensor and board selection from firmware info
         ###############
         # For regular version
 
         # get sensor
+        # TODO: pull sensor, board, comm id out to separate methods
         if self.sensorname == "icarus":
             import nsCamera.sensors.icarus as snsr
         elif self.sensorname == "icarus2":
@@ -492,8 +560,13 @@ class CameraAssembler:
                 sys.exit(1)
             boardobj = getattr(boardmod, self.boardname)
             self.board = boardobj(self)
+
+        # Now that board exists, initialize board-specific aliases for sensors
+        self.sensor.init_board_specific()
+
         ###############
 
+        # TODO: make cython the standard version
         # ###############
         # # For cython version
         #
@@ -534,8 +607,8 @@ class CameraAssembler:
             err, rval = self.getRegister("FPGA_NUM")
             if err or rval == "":
                 logging.critical(
-                    self.logcrit + "Initialization failed: unable to communicate with "
-                    "board. "
+                    self.logcrit + "Initialization failed: unable to communicate with"
+                    " board. "
                 )
             sys.exit(1)
 
@@ -578,6 +651,7 @@ class CameraAssembler:
         invalidFPGANum = False
         interfaces = []
 
+        # TODO: move to new method (combine with parsing from initialize)
         if int(self.FPGANum[0], 16) & 8:
             if self.FPGANum[1] == "1":
                 boardtype = "LLNLv1"
@@ -589,8 +663,8 @@ class CameraAssembler:
         else:
             boardtype = "SNLrevC"
             logging.warning(
-                self.logwarn + "FPGA self-identifies as SNLrevC, which is not "
-                "supported by this software "
+                self.logwarn + "FPGA self-identifies as SNLrevC, which is not"
+                " supported by this software "
             )
             invalidFPGANum = True
         self.FPGAboardtype = boardtype
@@ -605,8 +679,6 @@ class CameraAssembler:
             sensor = "Icarus"
         elif self.FPGANum[7] == "2":
             sensor = "Daedalus"
-        elif self.FPGANum[7] == "3":
-            sensor = "Horus"
         else:
             sensor = "Undefined"
             invalidFPGANum = True
@@ -637,39 +709,93 @@ class CameraAssembler:
         Returns:
             tuple: (error string, register contents as hexadecimal string without '0x')
         """
+        # logging.debug(self.logdebug + "getRegister: regname = " + str(regname))
+        logging.debug(
+            "{logdebug}getRegister: regname = {regname}".format(
+                logdebug=self.logdebug, regname=regname
+            )
+        )
+
         regname = regname.upper()
         if regname not in self.board.registers:
-            err = (
-                self.logerr + "invalid register name: " + regname + " ; returning zeros"
-            )
+            err = "{logerr}getRegister: Invalid register name: {regname}; returning"
+            " zeros".format(logerr=self.logerr, regname=regname)
             logging.error(err)
             return err, "00000000"
         sendpkt = Packet(cmd="1", addr=self.board.registers[regname])
         err, rval = self.comms.sendCMD(sendpkt)
         if err:
-            logging.error(self.logerr + "getRegister " + regname + " " + err)
-        return err, rval[8:16]
+            logging.error(
+                "{logerr}getRegister: {regname}; {err}".format(
+                    logerr=self.logerr, regname=regname, err=err
+                )
+            )
+
+        retval = rval[8:16]
+        logging.debug(
+            "{logdebug}getRegister: retval = {retval}".format(
+                logdebug=self.logdebug, retval=retval
+            )
+        )
+
+        return err, retval
 
     def setRegister(self, regname, regval):
         """
-        Sets named register to given value as hexadecimal string without '0x'
+        Sets named register to given value
 
         Args:
             regname: name of register as given in ICD
-            regval: value to assign to register, as hexadecimal string without '0x'
+            regval: value to assign to register, as integer or hexadecimal string
+              with or without '0x'
 
         Returns:
             tuple: (error string, response string)
         """
+        logging.debug(
+            "{logdebug}setRegister: regname = {regname}; regval = {regval}".format(
+                logdebug=self.logdebug, regname=regname, regval=regval
+            )
+        )
+
         regname = regname.upper()
         if regname not in self.board.registers:
-            err = self.logerr + "Invalid register name: " + regname
+            err = "{logerr}setRegister: Invalid register name: {regname}".format(
+                logerr=self.logerr, regname=regname
+            )
+            logging.error(err)
+            return err, "00000000"
+        if isinstance(regval, int):
+            regval = hex(regval)
+        try:
+            if regval[0:2] == "0x":
+                regval = regval[2:]
+        except TypeError:
+            err = "{logerr}setRegister: invalid register value parameter".format(
+                logerr=self.logerr
+            )
             logging.error(err)
             return err, "00000000"
         pkt = Packet(addr=self.board.registers[regname], data=regval)
         err, rval = self.comms.sendCMD(pkt)
         if err:
-            logging.error(self.logerr + "setRegister " + regname + ": " + err)
+            logging.error(
+                "{logerr}setRegister: {regname}: {err}".format(
+                    logerr=self.logerr, regname=regname, err=err
+                )
+            )
+        if len(rval) < 32:
+            logging.debug(
+                "{logdebug}SetRegister: rval = {rval}".format(
+                    logdebug=self.logdebug, rval=rval
+                )
+            )
+        else:
+            logging.debug(
+                "{logdebug}SetRegister: rval (truncated)= {rval}".format(
+                    logdebug=self.logdebug, rval=rval[0:32]
+                )
+            )
         return err, rval
 
     def resolveSubreg(self, srname):
@@ -683,6 +809,12 @@ class CameraAssembler:
         Returns:
             tuple(subregister name string, associated object, writable flag)
         """
+        logging.debug(
+            "{logdebug}resolveSubreg: srname = {srname}".format(
+                logdebug=self.logdebug,
+                srname=srname,
+            )
+        )
         writable = False
         srname = srname.upper()
         if srname in self.board.subreg_aliases:
@@ -691,7 +823,14 @@ class CameraAssembler:
             srobj = getattr(self.board, srname)
             writable = getattr(self.board, srname).writable
         else:
+            # No-object error is handled by calling function
             srobj = None
+        logging.debug(
+            "{logdebug}resolveSubreg: srobj = {srobj}, writable={writable}".format(
+                logdebug=self.logdebug, srobj=srobj, writable=writable
+            )
+        )
+
         return srname, srobj, writable
 
     def getSubregister(self, subregname):
@@ -704,31 +843,42 @@ class CameraAssembler:
         Returns:
             tuple: (error string, contents of subregister as binary string without '0b')
         """
+        logging.debug(
+            "{logdebug}getSubegister: subregname = {subregname}".format(
+                logdebug=self.logdebug,
+                subregname=subregname,
+            )
+        )
+
         subregname, subregobj, _ = self.resolveSubreg(subregname)
         if not subregobj:
-            err = (
-                self.logerr
-                + "getSubregister: invalid lookup: "
-                + subregname
-                + ' , returning "0" string '
-            )
+            err = "{logerr}getSubregister: invalid lookup: {subregname}; returning"
+            " string of zeroes".format(logerr=self.logerr, subregname=subregname)
+
             logging.error(err)
             return err, "".zfill(8)
         err, resp = self.getRegister(subregobj.register)
         if err:
             logging.error(
-                self.logerr
-                + "getSubregister: unable to retrieve register setting: "
-                + subregname
-                + ' , returning "0" string'
+                "{logerr}getSubregister: unable to retrieve register setting: \
+                {subregname}; returning '0' string".format(
+                    logerr=self.logerr, subregname=subregname
+                )
             )
+
             return err, "".zfill(8)
         hex_str = "0x" + resp  # this should be a hexadecimalstring
         b_reg_value = "{0:0=32b}".format(int(hex_str, 16))  # convert to binary string
         # list indexing is reversed from bit string; the last bit of the string is at
         #   index 0 in the list (thus bit 0 is at index 0)
         startindex = 31 - subregobj.start_bit
-        return "", b_reg_value[startindex : startindex + subregobj.width]
+        retval = b_reg_value[startindex : startindex + subregobj.width]
+        logging.debug(
+            "{logdebug}getSubregister: retval = {retval}".format(
+                logdebug=self.logdebug, retval=retval
+            )
+        )
+        return "", retval
 
     def setSubregister(self, subregname, valstring):
         """
@@ -737,35 +887,60 @@ class CameraAssembler:
 
         Args:
             subregname: listed in board.subreg_aliases or defined in board.subregisters
-            valstring: binary string without '0b'
+            valstring: integer or binary string with or without '0b'
 
         Returns:
             tuple: (error, packet response string) from setRegister
         """
+        logging.debug(
+            "{logdebug}setSubegister: subregname = {subregname}; valstring ="
+            " {valstring}".format(
+                logdebug=self.logdebug, subregname=subregname, valstring=valstring
+            )
+        )
+
         subregname, subregobj, writable = self.resolveSubreg(subregname)
         if not subregobj:
-            err = self.logerr + "setSubregister: invalid lookup: " + subregname
+            err = "{logerr}getSubregister: invalid lookup: {subregname}".format(
+                logerr=self.logerr, subregname=subregname
+            )
+
             logging.error(err)
             return err, "0"
         if not writable:
-            err = (
-                self.logerr
-                + "setSubregister: not a writable subregister: "
-                + subregname
+            err = "{logerr}getSubregister: not a writable subregister: {subregname}"
+            "".format(logerr=self.logerr, subregname=subregname)
+            logging.error(err)
+            return err, "0"
+        if isinstance(valstring, int):
+            valstring = bin(valstring)[2:]
+        try:
+            if valstring[0:2] == "0b":
+                valstring = valstring[2:]
+        except TypeError:
+            err = "{logerr}getSubregister: invalid subregister value parameter".format(
+                logerr=self.logerr
             )
+
             logging.error(err)
             return err, "0"
         if len(str(valstring)) > subregobj.width:
-            err = self.logerr + "setSubregister: replacement string is too long"
+            err = "{logerr}getSubregister: ialue string is too long".format(
+                logerr=self.logerr
+            )
+
             logging.error(err)
             return err, "0"
         # read current value of register data
         err, resp = self.getRegister(subregobj.register)
         if err:
             logging.error(
-                self.logerr + "setSubregister: unable to retrieve register setting; "
-                "setting of " + subregname + " likely failed)"
+                "{logerr}getSubregister: unable to retrieve register setting; setting"
+                " of {subregname} likely failed ".format(
+                    logerr=self.logerr, subregname=subregname
+                )
             )
+
             return err, "0"
         hex_str = "0x" + resp
         b_reg_value = "{0:0=32b}".format(int(hex_str, 16))  # convert to binary
@@ -780,20 +955,43 @@ class CameraAssembler:
         h_reg_value = "{num:{fill}{width}x}".format(
             num=int(new_reg_value, 2), fill="0", width=8
         )
-        return self.setRegister(subregobj.register, h_reg_value)
+        err, retval = self.setRegister(subregobj.register, h_reg_value)
+        # logging.debug(self.logdebug + "retval = " + str(retval))
+        if len(retval) < 32:
+            logging.debug(
+                "{logdebug}setSubregister: retval = {retval}".format(
+                    logdebug=self.logdebug, retval=retval
+                )
+            )
+        else:
+            logging.debug(
+                "{logdebug}setSubregister: retval (truncated) = {retval}".format(
+                    logdebug=self.logdebug, retval=retval[0:32]
+                )
+            )
+
+        return err, retval
 
     def submitMessages(self, messages, errorstring="Error"):
         """
         Serially set multiple register / subregister values
 
         Args:
-            messages: list of tuples (register name, hexadecimal string without '0x')
-              and/or (subregister name, binary string without '0b')
+            messages: list of tuples (register name, integer or hexadecimal string with
+              or without '0x') and/or (subregister name, integer or binary string with
+              or without '0b')
             errorstring: error message to print in case of failure
 
         Returns:
             tuple (accumulated error string, response string of final message)
         """
+        logging.debug(
+            "{logdebug}submitMessages: messages = {messages}; errorstring ="
+            " {errorstring}".format(
+                logdebug=self.logdebug, messages=messages, errorstring=errorstring
+            )
+        )
+
         errs = ""
         err = ""
         rval = ""
@@ -803,19 +1001,19 @@ class CameraAssembler:
             elif m[0].upper() in self.board.subreglist:
                 err, rval = self.setSubregister(m[0].upper(), m[1])
             else:
-                err = (
-                    self.logerr
-                    + "submitMessages: Invalid register/subregister: "
-                    + errorstring
-                    + m[0]
+                err = "{logerr}submitMessages: Invalid register/subregister:"
+                " {errorstring}:{m0}; ".format(
+                    logerr=self.logerr, errorstring=errorstring, m0=m[0]
                 )
+
                 logging.error(err)
             errs = errs + err
         return err, rval
 
     def getPot(self, potname, errflag=False):
         """
-        Retrieves value of pot or ADC monitor subregister, scaled to [0,1).
+        Retrieves value of pot or ADC monitor subregister, scaled to [0,1). Returns '-1'
+          if value is unavailable
 
         Args:
             potname: name of pot or monitor, e.g., VRST or MON_CH2 found in
@@ -828,31 +1026,49 @@ class CameraAssembler:
             else:
                 float value of subregister, scaled to [0,1)
         """
+        logging.debug(
+            "{logdebug}getPot: potname = {potname}; errflag = {errflag}".format(
+                logdebug=self.logdebug, potname=potname, errflag=errflag
+            )
+        )
+
         potname, potobj, _ = self.resolveSubreg(potname)
         if not potobj:
-            err = (
-                self.logerr + "getPot: invalid lookup: " + potname + ' , returning "0" '
+            err = "{logerr}getPot: invalid lookup: {potname}; returning -1".format(
+                logerr=self.logerr, potname=potname
             )
+
             logging.error(err)
             if errflag:
-                return err, "0"
-            return "0"
+                return err, -1
+            return -1
         err, b_pot_value = self.getSubregister(potname)
         if err:
-            logging.warning(
-                self.logerr + "getPot: unable to read subregister " + potname
+            err = "{logerr}getPot: unable to read subregister: {potname}".format(
+                logerr=self.logerr, potname=potname
             )
+            b_pot_value = "-0b1"
+
         # convert binary string back to decimal
         f_reg_value = 1.0 * int(b_pot_value, 2)
         value = (f_reg_value - potobj.min) / (potobj.max - potobj.min)
+        # logging.debug(self.logdebug + "getpot: value = " + str(value))
+
+        logging.debug(
+            "{logdebug}getpot: value =  {value}".format(
+                logdebug=self.logdebug, value=value
+            )
+        )
+        if value < 0:
+            value = -1
         if errflag:
             return err, value
         return value
 
     def setPot(self, potname, value=1.0, errflag=False):
         """
-        Sets value of pot to value, normalized so that  '1.0' corresponds with the
-          fixed point maximum value of pot.
+        Sets value of pot to value, normalized so that '1.0' corresponds with the fixed
+          point maximum value of pot.
 
         Args:
             potname: common name of pot, e.g., VRST found in board.subreg_aliases or
@@ -866,6 +1082,13 @@ class CameraAssembler:
             else:
                 response packet as string
         """
+        logging.debug(
+            "{logdebug}setPot: potname = {potname}; value={value} errflag = {errflag}"
+            "".format(
+                logdebug=self.logdebug, potname=potname, value=value, errflag=errflag
+            )
+        )
+
         if value < 0:
             value = 0.0
         if value > 1:
@@ -873,29 +1096,36 @@ class CameraAssembler:
 
         potname, potobj, writable = self.resolveSubreg(potname)
         if not potobj:
-            err = (
-                self.logerr + "setPot: invalid lookup: " + potname + ' , returning "0" '
+            err = "{logerr}setPot: invalid lookup: {potname}; returning '-0b1'".format(
+                logerr=self.logerr, potname=potname
             )
+
             logging.error(err)
             if errflag:
-                return err, "0"
-            return "0"
+                return err, "-0b1"
+            return "-0b1"
         if not writable:
-            err = self.logerr + "setPot: not a writable subregister: " + potname
+            err = "{logerr}setPot: not a writable subregister: {potname}; returning"
+            " '-0b1'".format(logerr=self.logerr, potname=potname)
             logging.error(err)
             if errflag:
-                return err, "0"
-            return 0
+                return err, "-0b1"
+            return "-0b1"
         setpoint = int(round(value * potobj.max_value))
         setpointpadded = "{num:{fill}{width}b}".format(
             num=setpoint, fill="0", width=potobj.width
         )
+        logging.debug(
+            "{logdebug}setpot: setpointpadded =  {setpointpadded}".format(
+                logdebug=self.logdebug, setpointpadded=setpointpadded
+            )
+        )
+
         err, rval = self.setSubregister(potname, setpointpadded)
         if err:
             logging.error(
-                self.logerr
-                + "setPot: unable to confirm setting of subregister: "
-                + potname
+                err="{logerr}setPot: unable to confirm setting of subregister:"
+                " {potname}".format(logerr=self.logerr, potname=potname)
             )
         ident = potname[3:]
         if ident[0].isdigit():  # numbered pot scheme
@@ -913,14 +1143,22 @@ class CameraAssembler:
             )
             err1, resp = self.setRegister("DAC_CTL", potnumlatchstring)
         if err1:
-            logging.error(self.logerr + "setPot: unable to latch register")
+            # logging.error(self.logerr + "setPot: unable to latch register")
+
+            logging.error(
+                err="{logerr}setPot: unable to latch register".format(
+                    logerr=self.logerr
+                )
+            )
+
         if errflag:
             return err + err1, rval
         return rval
 
     def getPotV(self, potname, errflag=False):
         """
-        Reads voltage _setting_ (not actual voltage) of specified pot
+        Reads voltage _setting_ (not actual voltage) of specified pot. Returns negative
+          voltage if pot read is invalid
 
         Args:
             potname: name of pot or monitor, e.g., VRST or MON_CH2 found in
@@ -933,27 +1171,44 @@ class CameraAssembler:
             else:
                 float value of pot voltage
         """
+        logging.debug(
+            self.logdebug
+            + "getPotV: potname = "
+            + str(potname)
+            + "; errflag = "
+            + str(errflag)
+        )
         potname, potobj, _ = self.resolveSubreg(potname)
         if not potobj:
             err = (
-                self.logerr
-                + "getPotV: invalid lookup: "
-                + potname
-                + ' , returning "0" '
+                self.logerr + "getPotV: invalid lookup: " + potname + " , returning -1 "
             )
             logging.error(err)
             if errflag:
-                return err, "0"
-            return "0"
+                return err, -1
+            return -1
         err, val = self.getPot(potname, errflag=True)
+        logging.debug(self.logdebug + "getPotV: val = " + str(val))
         if err:
-            logging.error(self.logerr + "getPotV: unable to read pot " + potname)
+            logging.error(
+                self.logerr
+                + "getPotV: unable to read pot "
+                + potname
+                + "; returning a negative voltage"
+            )
+            val = -1
         minV = potobj.minV
         maxV = potobj.maxV
-        if errflag:
-            return err, val * (maxV - minV)
-        return val * (maxV - minV)
+        if val < 0:
+            returnval = -1
+        else:
+            returnval = val * (maxV - minV)
 
+        if errflag:
+            return err, returnval
+        return returnval
+
+    # TODO: optimize tuning speed for DACs
     def setPotV(
         self,
         potname,
@@ -975,7 +1230,7 @@ class CameraAssembler:
               defined in board.subregisters
             voltage: voltage bound by pot max and min (set in board object)
             tune: if True, iterate with monitor to correct voltage
-            accuracy: acceptable error in volts (if None, attempts to find closest
+            accuracy: acceptable error in volts (if None, attempts to find the closest
               possible pot setting and warns if last iteration does not reduce error
               below the resolution of the pot)
             iterations: number of iteration attempts
@@ -988,43 +1243,68 @@ class CameraAssembler:
             else:
                 response string
         """
+        logging.debug(
+            self.logdebug
+            + "setPotV: potname = "
+            + str(potname)
+            + "; voltage = "
+            + str(voltage)
+            + "; tune = "
+            + str(tune)
+            + "; accuracy = "
+            + str(accuracy)
+            + "; iterations = "
+            + str(iterations)
+            + "; approach = "
+            + str(approach)
+            + "; errflag = "
+            + str(errflag)
+        )
         potname, potobj, writable = self.resolveSubreg(potname)
         if not potobj:
             err = (
                 self.logerr
                 + "setPotV: invalid lookup: "
                 + potname
-                + ' , returning "0" '
+                + " , returning '-0b1' "
             )
             logging.error(err)
             if errflag:
-                return err, "0"
-            return "0"
+                return err, "-0b1"
+            return "-0b1"
         if not writable:
-            err = self.logerr + "setPotV: not a writable subregister: " + potname
+            err = (
+                self.logerr
+                + "setPotV: not a writable subregister: "
+                + potname
+                + "; returning '-0b1'"
+            )
             logging.error(err)
             if errflag:
-                return err, "0"
-            return "0"
+                return err, "-0b1"
+            return "-0b1"
         if voltage < potobj.minV:
             voltage = potobj.minV
         if voltage > potobj.maxV:
             voltage = potobj.maxV
         setting = (voltage - potobj.minV) / (potobj.maxV - potobj.minV)
+        logging.debug(self.logdebug + "setPotV: setting = " + str(setting))
         err, rval = self.setPot(potname, setting, errflag=True)
         time.sleep(0.1)
+        # TODO: refactor tuning to separate method
         if tune:
+            logging.debug(self.logdebug + "setPotV: beginning tuning")
             if potname not in self.board.monitor_controls.values():
                 err = (
                     self.logerr
                     + "setPotV: pot '"
                     + potname
-                    + "' does not have a corresponding monitor"
+                    + "' does not have a corresponding monitor; returning '-0b1'"
                 )
                 logging.error(err)
                 if errflag:
-                    return err, rval
-                return rval
+                    return err, "-0b1"
+                return "-0b1"
             self.setPot(potname, 0.65)
             time.sleep(0.2)
             err1, mon65 = self.getMonV(potname, errflag=True)
@@ -1036,13 +1316,18 @@ class CameraAssembler:
             stepsize = potrange / (potobj.max_value + 1)
             err += err1 + err2
             if err or potrange < 1:
-                err += " ERROR: [CA] setPotV: unable to tune pot " + potname
+                err += self.logerr + "setPotV: unable to tune pot " + potname
                 if potrange < 1:  # potrange should be on the order of 3.3 or 5 volts
-                    err += "; monitor shows insufficient change with pot variation"
-                logging.error(err)
+                    err += "; monitor shows insufficient change with pot variation; "
+                    "retrying setPotV with tune=False"
+                logging.warning(err)
+                err, rval = self.setPotV(
+                    potname=potname, voltage=voltage, tune=False, errflag=True
+                )
                 if errflag:
-                    return err, rval
-                return rval
+                    err += "; unable to set pot; returning '-0b1'"
+                    return err, "-0b1"
+                return "-0b1"
             potzero = 0.35 - (mon35 / potrange)
             potone = 1.65 - (mon65 / potrange)
             if potzero < 0:
@@ -1078,13 +1363,17 @@ class CameraAssembler:
                             + str(voltage)
                             + "V, monitor returns "
                             + str(measured)
-                            + "V"
+                            + "V; if this value is incorrect, consider trying "
+                            + "tune=False"
                         )
+                        logging.debug(self.logdebug + "setPotV: tuning complete")
                         if errflag:
                             return "", rval
                         return rval
                     smalladjust += 1
                 if not int(2 * diff / stepsize):
+                    # TODO: is this check redundant with the first one?
+                    logging.debug(self.logdebug + "setPotV: tuning complete")
                     if errflag:
                         return "", rval
                     return rval
@@ -1114,14 +1403,22 @@ class CameraAssembler:
                 )
             err += err1 + err2 + err3 + err4
         if err:
-            logging.error(self.logerr + "setPotV: errors occurred: " + err)
+            logging.error(
+                self.logerr
+                + "setPotV: errors occurred: "
+                + err
+                + "; returning negative value"
+            )
+            rval = -1
         if errflag:
             return err, rval
+        logging.debug(self.logdebug + "setPotV: tuning complete")
         return rval
 
     def getMonV(self, monname, errflag=False):
         """
-        Reads voltage from monitor named or that associated with the pot named 'monname'
+        Reads voltage from monitor named or associated with the pot named 'monname'.
+        Returns negative voltage if pot read is invalid
 
         Args:
             monname: name of pot or monitor, e.g., VRST or MON_CH2 found in
@@ -1134,6 +1431,13 @@ class CameraAssembler:
             else:
                 float value of voltage measured by monitor
         """
+        logging.debug(
+            self.logdebug
+            + "getMonV: monname = "
+            + str(monname)
+            + "; errflag = "
+            + str(errflag)
+        )
         monname = monname.upper()
         if monname in self.board.subreg_aliases:
             monname = self.board.subreg_aliases[monname].upper()
@@ -1146,17 +1450,28 @@ class CameraAssembler:
                 pass  # no change necessary
             else:
                 err = (
-                    self.logerr + "getMonV: invalid lookup " + monname + ", returning 0"
+                    self.logerr
+                    + "getMonV: invalid lookup "
+                    + monname
+                    + ", returning -1"
                 )
                 logging.error(err)
                 if errflag:
-                    return err, 0
-                return 0
+                    return err, -1
+                return -1
         err, monval = self.getPot(monname, errflag=True)
+        logging.debug(self.logdebug + "getMonV: monval = " + str(monval))
         if err:
             logging.error(
-                self.logerr + "getMonV: unable to read monitor value for " + monname
+                self.logerr
+                + "getMonV: unable to read monitor value for "
+                + monname
+                + "; returning -1"
             )
+            monval = -1
+            return -1
+        # Bipolar ADCs can legitimately return a negative voltage, but this is an
+        #   error condition for the board
         if self.board.ADC5_bipolar:
             if monval >= 0.5:
                 monval -= 1  # handle negative measurements (two's complement)
@@ -1180,49 +1495,10 @@ class CameraAssembler:
         self.arm(mode)
         return self.readoff(waitOnSRAM)
 
-    def deInterlace(self, frames, ifactor=1):
+    def saveFrames(self, frames, path=None, filename="frames", prefix=None):
         """
-        Extracts interlaced frames. If interlacing does not evenly divide the height,
-          remainder lines will be dropped
-        Args:
-            frames: list of full-sized frames
-            ifactor: interlacing factor; number of interlaced lines (generates
-              ifactor + 1 images per frame)
-
-        Returns: list of deinterlaced frames
-        """
-        if ifactor == 0:  # don't do anything
-            return frames
-        warntrimmed = False
-        if self.padToFull:
-            newheight = self.sensor.maxheight // (ifactor + 1)
-            if newheight != (self.sensor.maxheight / (ifactor + 1)):
-                warntrimmed = True
-        else:
-            newheight = self.sensor.height // (ifactor + 1)
-            if newheight != (self.sensor.height / (ifactor + 1)):
-                warntrimmed = True
-
-        if warntrimmed:
-            logging.warning(
-                self.logwarn + "deInterlace: interlacing setting requires dropping of "
-                "lines to maintain consistent frame sizes "
-            )
-        delaced = []
-        for frame in frames:
-            for sub in range(ifactor + 1):
-                current = np.zeros((newheight, self.sensor.width), dtype=int)
-                for line in range(newheight):
-                    current[line] = frame[(ifactor + 1) * line + sub]
-                delaced.append(current)
-        return delaced
-
-    def saveFrames(
-        self, frames, path=None, filename="frames", prefix=None,
-    ):
-        """
-        Save list of numpy arrays to disk. If passed an unprocessed text string, convert
-          to numpy before saving. Use 'prefix=""' for no prefix
+        Save list of numpy arrays to disk. If passed an unprocessed text string, saves
+          it directly to disk for postprocessing. Use 'prefix=""' for no prefix
 
         Args:
             frames: numpy array or list of numpy arrays OR text string
@@ -1233,6 +1509,15 @@ class CameraAssembler:
         Returns:
             Error string
         """
+        logging.debug(
+            self.logdebug
+            + "saveFrames: path = "
+            + str(path)
+            + "; filename = "
+            + str(filename)
+            + "; prefix = "
+            + str(prefix)
+        )
         logging.info(self.loginfo + "saveFrames")
         err = ""
         if path is None:
@@ -1242,12 +1527,14 @@ class CameraAssembler:
         if not os.path.exists(path):
             os.makedirs(path)
 
+        # TODO catch save file exceptions
         if isinstance(frames[0], str):
+            logging.debug(self.logdebug + "saveFrames: saving text frames")
             filename = filename + ".txt"
             savefile = open(os.path.join(path, prefix + filename), "w+")
             savefile.write(frames)
-
         else:
+            logging.debug(self.logdebug + "saveFrames: saving numerical frames")
             filename = filename + ".bin"
             stacked = np.stack(frames)
             try:
@@ -1265,69 +1552,13 @@ class CameraAssembler:
             stacked.tofile(os.path.join(path, prefix + filename))
         return err
 
-    def saveTiffs(
-        self, frames, path=None, filename="Frame", prefix=None, index=None,
-    ):
-        """
-        Save numpy array or list of numpy arrays or single array to disk as individual
-          tiffs, with frame number appended to filename.
-
-        Args:
-            frames: numpy array or list of numpy arrays
-            path: save path, defaults to './output'
-            filename: defaults to 'Frame' followed by frame number
-            prefix: prepended to 'filename', defaults to time/date
-              (e.g. '160830-124704_')
-            index: number to start frame numbering
-
-        Returns:
-            Error string
-        """
-        logging.info(self.loginfo + "saveTiffs")
-        err = ""
-        if path is None:
-            path = os.path.join(os.getcwd(), "output")
-        if prefix is None:
-            prefix = datetime.now().strftime("%y%m%d-%H%M%S%f")[:-5] + "_"
-        if not os.path.exists(path):
-            os.makedirs(path)
-        if index is None:
-            nframe = self.sensor.firstframe
-        else:
-            nframe = index
-
-        if type(frames) is not list:
-            frames = [frames]
-        # if this is a text string from fast readoff, do the numpy conversion now
-        if isinstance(frames[0], str):
-            frames = self.generateFrames(frames)
-
-        framestemp = np.copy(frames)
-        for frame in framestemp:
-            try:
-                if self.padToFull:
-                    frame.shape = (
-                        self.sensor.maxheight // (self.sensor.interlacing + 1),
-                        self.sensor.maxwidth,
-                    )
-                else:
-                    frame.shape = (
-                        self.sensor.height // (self.sensor.interlacing + 1),
-                        self.sensor.width,
-                    )
-                frameimg = Image.fromarray(frame)
-                namenum = filename + "_%d" % nframe
-                tifpath = os.path.join(path, prefix + namenum + ".tif")
-                frameimg.save(tifpath)
-                nframe += 1
-            except:
-                err = self.logerr + "saveTiffs: unable to save images"
-                logging.error(err)
-                continue
-        return err
-
     def saveNumpys(
-        self, frames, path=None, filename="Frame", prefix=None, index=None,
+        self,
+        frames,
+        path=None,
+        filename="Frame",
+        prefix=None,
+        index=None,
     ):
         """
         Save numpy array or list of numpy arrays to disk as individual numpy data files,
@@ -1345,6 +1576,17 @@ class CameraAssembler:
             Error string
         """
         logging.info(self.loginfo + "saveNumpys")
+        logging.debug(
+            self.logdebug
+            + "saveNumpys: path = "
+            + str(path)
+            + "; filename = "
+            + str(filename)
+            + "; prefix = "
+            + str(prefix)
+            + "; index = "
+            + str(index)
+        )
         err = ""
         if path is None:
             path = os.path.join(os.getcwd(), "output")
@@ -1353,45 +1595,62 @@ class CameraAssembler:
         if not os.path.exists(path):
             os.makedirs(path)
         if index is None:
-            nframe = self.sensor.firstframe
+            firstnum = self.sensor.firstframe
         else:
-            nframe = index
-        if type(frames) is not list:
+            firstnum = index
+        if not isinstance(frames, list):
             frames = [frames]
 
         # if this is a text string from fast readoff, do the numpy conversion now
         if isinstance(frames[0], str):
-            frames = self.generateFrames(frames)
+            frames = generateFrames(frames)
 
         framestemp = np.copy(frames)
-        for frame in framestemp:
+
+        for idx, frame in enumerate(framestemp):
+            if idx < len(framestemp) / 2:
+                interlacing = self.sensor.interlacing[0]
+            else:
+                interlacing = self.sensor.interlacing[1]
             try:
                 if self.padToFull:
-                    frame.shape = (
-                        self.sensor.maxheight // (self.sensor.interlacing + 1),
-                        self.sensor.maxwidth,
+                    frame = np.reshape(
+                        frame, (self.sensor.maxheight // (interlacing + 1), -1)
                     )
                 else:
-                    frame.shape = (
-                        self.sensor.height // (self.sensor.interlacing + 1),
-                        self.sensor.width,
+                    frame = np.reshape(
+                        frame,
+                        (
+                            (self.sensor.lastrow - self.sensor.firstrow + 1)
+                            // (interlacing + 1),
+                            -1,
+                        ),
                     )
-                namenum = filename + "_%d" % nframe
+                namenum = filename + "_%d" % firstnum
                 nppath = os.path.join(path, prefix + namenum + ".npy")
                 np.save(nppath, frame)
-                nframe += 1
-            except:
+                firstnum += 1
+            except SystemExit:
+                raise
+            except KeyboardInterrupt:
+                raise
+            except Exception:
                 err = self.logerr + "saveNumpys: unable to save arrays"
                 logging.error(err)
                 continue
         return err
 
     def dumpNumpy(
-        self, datastream, path=None, filename="Dump", prefix=None,
+        self,
+        datastream,
+        path=None,
+        filename="Dump",
+        prefix=None,
     ):
         """
-        Datastream is converted directly to numpy array and saved to disk. No attempt
-          to parse headers or separate into individual frames is made.
+        Datastream is converted directly to numpy array and saved to disk. No attempt to
+          parse headers or separate into individual frames is made. The packet header is
+          removed before saving
 
         Args:
             datastream: string to be saved
@@ -1404,6 +1663,15 @@ class CameraAssembler:
             Error string
         """
         logging.info(self.loginfo + "dumpNumpy")
+        logging.debug(
+            self.logdebug
+            + "dumpNumpy: path = "
+            + str(path)
+            + "; filename = "
+            + str(filename)
+            + "; prefix = "
+            + str(prefix)
+        )
         err = ""
         if path is None:
             path = os.path.join(os.getcwd(), "output")
@@ -1411,77 +1679,18 @@ class CameraAssembler:
             prefix = time.strftime("%y%m%d-%H%M%S_", time.localtime())
         if not os.path.exists(path):
             os.makedirs(path)
-        npdata = self.str2nparray(datastream)
+        npdata = str2nparray(datastream[36:])
         try:
             nppath = os.path.join(path, prefix + filename + ".npy")
             np.save(nppath, npdata)
-        except:
+        except SystemExit:
+            raise
+        except KeyboardInterrupt:
+            raise
+        except Exception:
             err = self.logerr + "dumpNumpy: unable to save data stream"
             logging.error(err)
         return err
-
-    def plotFrames(self, frames, index=None):
-        """
-        Plot frame or list of frames as individual graphs.
-
-        Args:
-            frames: numpy array or list of numpy arrays
-            index: number to start frame numbering
-
-        Returns:
-            Error string
-        """
-        logging.info(self.loginfo + "plotFrames")
-        err = ""
-        if index is None:
-            nframe = self.sensor.firstframe
-        else:
-            nframe = index
-
-        if type(frames) is not list:
-            frames = [frames]
-
-        # if this is a text string from fast readoff, do the numpy conversion now
-        if isinstance(frames[0], str):
-            frames = self.generateFrames(frames)
-
-        framestemp = np.copy(frames)
-        for frame in framestemp:
-            try:
-                if self.padToFull:
-                    frame.shape = (
-                        self.sensor.maxheight // (self.sensor.interlacing + 1),
-                        self.sensor.maxwidth,
-                    )
-                else:
-                    frame.shape = (
-                        self.sensor.height // (self.sensor.interlacing + 1),
-                        self.sensor.width,
-                    )
-            except:
-                err = self.logerr + "plotFrames: unable to plot frame"
-                logging.error(err)
-                continue
-            plt.imshow(frame, cmap="gray")
-            name = "Frame %d" % nframe
-            plt.title(name)
-            plt.show()
-            nframe += 1
-        return err
-
-    def checkCRC(self, rval):
-        """
-        Calculate CRC for rval[:-4] and compare with expected CRC in rval[-4:]
-
-        Args:
-            rval: hexadecimal string
-
-        Returns:
-            boolean, True if CRCs match
-        """
-        data_crc = int(rval[-4:], base=16)
-        CRC_calc = crc16pure.crc16xmodem(self.str2bytes(rval[:-4]))
-        return CRC_calc == data_crc
 
     def checkRegSet(self, regname, teststring):
         """
@@ -1489,7 +1698,8 @@ class CameraAssembler:
 
         Args:
             regname: register to test
-            teststring: value to assign to register, as hexadecimal string without '0x'
+            teststring: value to assign to register, as integer or hexadecimal string
+              with or without '0x'
 
         Returns:
             boolean, True if read and write values match
@@ -1531,7 +1741,7 @@ class CameraAssembler:
     def powerCheck(self, delta=10):
         """
         Check to see if board power has persisted since powerCheck was last initialized.
-          Compares time elapsed since initialization against board's timer. If
+          Compares time elapsed since initialization against board's timer. If the
           difference is greater than 'delta,' flag as False (power has likely failed)
 
         Args:
@@ -1542,6 +1752,7 @@ class CameraAssembler:
                      'False' indicates power failure
         """
         elapsed = time.time() - self.inittime
+        logging.debug(self.logdebug + "powerCheck: elapsed time = " + str(elapsed))
         difference = abs(elapsed - self.getTimer())
         if difference > delta:
             logging.warning(
@@ -1550,44 +1761,8 @@ class CameraAssembler:
             )
         return difference < delta
 
-    def dummyCheck(self, image, margin, dummyVals=None):
-        """
-        Compare image with 'canonical' dummy sensor image (actual values estimated)
-
-        Args:
-            image: numpy array containing frame image
-            margin: maxmimum allowed error for sensor
-            dummyVals: condensed array of expected dummy sensor image values
-
-        Returns:
-            tuple, (number of pixels exceeding difference margin, numpy array containing
-              image subtracted from expected dummy image)
-        """
-        if dummyVals is None:
-            dummyVals = self.board.dummySensorVals
-        stripe0 = []
-        stripe1 = []
-        for i in range(16):
-            stripe0.append([dummyVals[0][i]] * 32)
-            stripe1.append([dummyVals[1][i]] * 32)
-        stripet = [val for sublist in stripe0 for val in sublist]
-        stripeb = [val for sublist in stripe1 for val in sublist]
-        testVals = [stripet] * 512 + [stripeb] * 512
-        testimage = np.array(testVals)
-        if image.size == testimage.size:
-            image.shape = (self.sensor.height, self.sensor.width)
-            diff = testimage - image
-            diffabs = [abs(i) for sublist in diff for i in sublist]
-            bads = sum(1 for i in diffabs if i > margin)
-            return bads, diff
-        else:
-            logging.error(
-                self.logerr + "dummyCheck: Image size does not match dummy image; "
-                "returning zero, actual testimage "
-            )
-            return 0, testimage
-
     def printBoardInfo(self):
+        # TODO: add override option if logging level is above info
         logging.info(
             self.loginfo
             + "Python version: "
@@ -1606,6 +1781,7 @@ class CameraAssembler:
             logging.info(self.loginfo + "Board type: " + self.FPGAboardtype)
             logging.info(self.loginfo + "Rad-Tolerant: " + str(self.FPGArad))
             logging.info(self.loginfo + "Sensor family: " + self.FPGAsensor)
+            logging.info(self.loginfo + "Sensor label: " + self.sensor.loglabel)
             logging.info(
                 self.loginfo + "Available interfaces: " + ", ".join(self.FPGAinterfaces)
             )
@@ -1616,13 +1792,14 @@ class CameraAssembler:
                 self.loginfo + "GigE connected to " + ip + ":" + str(self.port)
             )
         elif self.commname == "rs422":
-            logging.info(self.loginfo + "RS422 connected to " + self.comms._port)
+            logging.info(self.loginfo + "RS422 connected to " + self.comms.port)
 
     def dumpRegisters(self):
         """
-        List contents of all registers in board.registers. WARNING: some status flags
+        *DEPRECATED* use dumpStatus() instead
+
+        List contents of all registers in board.registers. *WARNING* some status flags
           will reset when read.
-        DEPRECATED: use dumpStatus() instead
 
         Returns:
             Sorted list: [register name (register address) : register contents as
@@ -1644,12 +1821,12 @@ class CameraAssembler:
 
     def dumpSubregisters(self):
         """
+        *DEPRECATED* use dumpStatus() instead
+
         List contents of all subregisters in board.channel_lookups and
           board.monitor_lookups.
-        WARNING: some registers will reset when read- only the first subregister from
+        *WARNING* some registers will reset when read; only the first subregister from
           such a register will return the correct value, the remainder will return zeros
-
-        DEPRECATED: use dumpStatus() instead
 
         Returns:
             dictionary  {subregister name : subregister contents as binary string
@@ -1666,76 +1843,6 @@ class CameraAssembler:
             val = hex(int(resp, 2))
             dump[key] = val
         return dump
-
-    def str2bytes(self, astring):
-        """
-        Python-version-agnostic converter of hexadecimal strings to bytes
-
-        Args:
-            astring: hexadecimal string without '0x'
-
-        Returns:
-            byte string equivalent to input string
-        """
-        if self.PY3:
-            dbytes = binascii.a2b_hex(astring)
-        else:
-            dbytes = astring.decode("hex")
-        return dbytes
-
-    def bytes2str(self, bytesequence):
-        """
-        Python-version-agnostic converter of bytes to hexadecimal strings
-
-        Args:
-            bytesequence: sequence of bytes as string (Py2) or bytes (Py3)
-
-        Returns:
-            hexadecimal string representation of 'bytes' without '0x'
-        """
-        estring = binascii.b2a_hex(bytesequence)
-        if self.PY3:
-            estring = str(estring)[2:-1]
-        return estring
-
-    def str2nparray(self, valstring):
-        """
-        Convert string into array of uint16s
-
-        Args:
-            valstring: string of hexadecimal characters
-
-        Returns:
-            numpy array of uint16
-        """
-        stringlen = len(valstring)
-        arraylen = int(stringlen / 4)
-        outarray = np.empty(int(arraylen), dtype="uint16")
-
-        for i in range(0, arraylen):
-            outarray[i] = int(valstring[4 * i : 4 * i + 4], 16)
-        return outarray
-
-    def flatten(self, x):
-        """
-        Flatten list of lists into single list
-        """
-        if isinstance(x, collections.Iterable):
-            return [a for i in x for a in self.flatten(i)]
-        else:
-            return [x]
-
-    def getEnter(self, text):
-        """
-        Wait for enter key to be pressed.
-
-        Args:
-            text: message asking for keypress
-        """
-        if self.PY3:
-            input(text)
-        else:
-            raw_input(text)
 
     def mmReadoff(self, waitOnSRAM, variation=None):
         """
@@ -1757,7 +1864,10 @@ class CameraAssembler:
         elif variation == "Average":
             return np.sum(frames, axis=0) // self.sensor.nframes
         elif variation == "Landscape":
-            shaped = [np.reshape(frame, (1024, 512)) for frame in frames]
+            shaped = [
+                np.reshape(frame, (self.sensor.maxheight, self.sensor.maxwidth))
+                for frame in frames
+            ]
             return np.concatenate(shaped, axis=1)
         else:
             return frames[0]
@@ -1774,6 +1884,13 @@ class CameraAssembler:
         Returns:
             Error string
         """
+        logging.debug(
+            self.logdebug
+            + "setFrames: minframe = "
+            + str(minframe)
+            + "; maxframe = "
+            + str(maxframe)
+        )
         if minframe is None:
             minframe = self.sensor.minframe
         if maxframe is None:
@@ -1827,7 +1944,7 @@ class CameraAssembler:
             )
         return err
 
-    def setRows(self, minrow=0, maxrow=None, fullsize=False):
+    def setRows(self, minrow=0, maxrow=None, padToFull=False):
         """
         Sets bounds on rows returned by board, inclusive (e.g., 0,1023 returns all 1024
           rows). If called without parameters, resets to full image size.
@@ -1835,10 +1952,18 @@ class CameraAssembler:
         Args:
             minrow: first row to return from board
             maxrow: last row to return from board
-            fullsize: if True, generate full size frames, padding collected rows with
-            zeroes as necessary
+            padToFull: if True, generate full size frames, padding collected rows with
+              zeroes if necessary
         """
-        err = ""
+        logging.debug(
+            self.logdebug
+            + "setRows: minrow = "
+            + str(minrow)
+            + "; maxrow = "
+            + str(maxrow)
+            + "; padToFull = "
+            + str(padToFull)
+        )
         if maxrow is None:
             maxrow = self.sensor.maxheight - 1
         if (
@@ -1849,8 +1974,8 @@ class CameraAssembler:
             or maxrow >= self.sensor.maxheight
         ):
             err = (
-                self.logerr + "setRows: invalid row arguments submitted. Frame size "
-                "remains unchanged. "
+                self.logerr + "setRows: invalid row arguments submitted. Frame size"
+                " remains unchanged. "
             )
             logging.error(err)
             return err
@@ -1870,17 +1995,13 @@ class CameraAssembler:
         )
 
         if self.commname == "rs422":
-            self.comms._datatimeout = (
+            self.comms.datatimeout = (
                 (1.0 * self.sensor.height / self.sensor.maxheight)
                 * 5e7
                 * self.sensor.nframes
-                / self.comms._baud
+                / self.comms.baud
             )
-
-        if fullsize:
-            self.padToFull = True
-        else:
-            self.padToFull = False
+        self.padToFull = padToFull
         logging.info(
             self.loginfo
             + "Readoff set to "
@@ -1898,46 +2019,10 @@ class CameraAssembler:
             )
         return err
 
-    def generateFrames(self, data):
-        """
-        Processes data stream from board into frames and applies sensor-specific
-          parsing. Generates padded data for fullsize option of setRows.
-
-        Args:
-            data: stream from board.
-
-        Returns: list of parsed frames
-        """
-        allframes = self.str2nparray(data)
-        # self.oldtime = self.currtime
-        # self.currtime = time.time()
-        # self.unstringed.append(self.currtime - self.oldtime)
-        frames = [0] * self.sensor.nframes
-        framesize = self.sensor.width * self.sensor.height
-        if self.padToFull:
-            toprows = self.sensor.firstrow
-            botrows = (self.sensor.maxheight - 1) - self.sensor.lastrow
-            for n in range(self.sensor.nframes):
-                padtop = np.zeros(toprows * self.sensor.maxwidth, dtype=int)
-                padbot = np.zeros(botrows * self.sensor.maxwidth, dtype=int)
-                thisframe = np.concatenate(
-                    (padtop, allframes[n * framesize : (n + 1) * framesize], padbot)
-                )
-                frames[n] = thisframe
-        else:
-            for n in range(self.sensor.nframes):
-                frames[n] = allframes[n * framesize : (n + 1) * framesize]
-        self.clearStatus()
-        parsed = self.parseReadoff(frames)
-        # self.oldtime = self.currtime
-        # self.currtime = time.time()
-        # self.parsedtime.append(self.currtime - self.oldtime)
-        return parsed
-
     def abortReadoff(self, flag=True):
         """
         Simple abort command for readoff in waiting mode--does not interrupt download in
-           progress. Requires external threading to function. WARNING: if not
+           progress. Requires external threading to function. *WARNING* if not
            intercepted by active readoff command, will terminate next readoff command
            immediately at inception.
         Args:
@@ -1945,6 +2030,7 @@ class CameraAssembler:
         Returns:
             boolean: updated setting of flag
         """
+        logging.info(self.loginfo + "abortReadoff")
         self.abort = flag
         return flag
 
@@ -1959,9 +2045,12 @@ class CameraAssembler:
     ):
         """
         Acquire a series of images as fast as possible, then process and save to disk.
+        *WARNING* This method stores images in RAM, so the number of sets that can be
+          acquired in a single call is limited by available memory.
 
         Args:
             sets: Number of acquisitions to perform
+            trig: trigger type; 'hardware', 'software', or 'dual'
             path: save path, defaults to './output'
             filename: defaults to 'frames.bin'
             prefix: prepended to filename, defaults to time/date (e.g. '160830-124704_')
@@ -1973,12 +2062,26 @@ class CameraAssembler:
         Returns:
             Time taken for acquisition (seconds)
         """
+        logging.debug(
+            self.logdebug
+            + "batchAcquire: sets = "
+            + str(sets)
+            + "; trig = "
+            + str(trig)
+            + "; path = "
+            + str(path)
+            + "; filename = "
+            + str(filename)
+            + "; prefix = "
+            + str(prefix)
+            + "; showProgress = "
+            + str(showProgress)
+        )
         datalist = ["0"] * sets
         timelist = [datetime.now()] * sets
         logging.info(
             self.loginfo
-            + "batchAcquire: temporarily disabling warning and information "
-            "logging "
+            + "batchAcquire: temporarily disabling warning and information logging "
         )
         logging.getLogger().setLevel(self.verbmap.get(2))
         beforeread = time.time()
@@ -2002,11 +2105,11 @@ class CameraAssembler:
         setnum = 0
         if path is None:
             path = os.path.join(os.getcwd(), "output")
-        for (imset, imtime) in zip(datalist, timelist):
+        for imset, imtime in zip(datalist, timelist):
             setnum = setnum + 1
             if showProgress and not setnum % showProgress:
                 print(self.loginfo + "batchAcquire: Saving set " + str(setnum))
-            parsed = self.generateFrames(imset)
+            parsed = generateFrames(self, imset)
             if prefix is None:
                 setprefix = imtime.strftime("%y%m%d-%H%M%S%f")[:-2] + "_"
             else:
@@ -2016,42 +2119,45 @@ class CameraAssembler:
         logging.info(self.loginfo + "batchAcquire: re-enabling logging")
         return afterread - beforeread
 
-    def loadTextFrames(self, filename='frames.txt', path=None):
-        """
-        Load a image set previously saved as text and convert to frames. NOTE: to work
-          properly, the cameraAssembler object must have the same geometry and sensor
-          tyoe that was used to create the text file
-
-        Args:
-            filename: name of textfile to load
-            path: path to file, if not the current working directory
-
-       Returns: list of parsed frames
-        """
+    # TODO: should this be just a flag for readoff instead of a distinct method?
+    # TODO: make sure this handles single frames (list made already?), text frames
+    # TODO: add documentation
+    def saveHDF(
+        self,
+        frames,
+        path=None,
+        filename="Acquisition",
+        prefix=None,
+    ):
+        """ """
+        logging.info(self.loginfo + ": saveHDF")
+        err = ""
         if path is None:
-            path = os.path.join(os.getcwd())
-        textfile = os.path.join(path, filename)
+            path = os.path.join(os.getcwd(), "output")
+        if prefix is None:
+            prefix = datetime.now().strftime("%y%m%d-%H%M%S%f")[:-5] + "_"
+        if not os.path.exists(path):
+            os.makedirs(path)
 
-        try:
-            f = open(textfile, "r")
-            s = f.read()
-            frames = self.generateFrames(s)
-            return frames
-        except OSError as err:
-            print("OS error: {0}".format(err))
-        except ValueError:
-            print("Could not convert data to an integer.")
-        except:
-            print("Unexpected error:", sys.exc_info()[0])
+        h5file = os.path.join(path, prefix + filename + ".hdf5")
+        with h5py.File(h5file, "w") as f:
+            # shotgrp = f.create_group("DATA/SHOT")
+            frame_index = 0
+            for frame in frames:
+                grp = f.create_group("DATA/SHOT/FRAME_0" + str(frame_index))
+                data = grp.create_dataset(
+                    "DATA", (self.sensor.height, self.sensor.width), data=frame
+                )
+                frame_index += 1
 
 
 """
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.  
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 """

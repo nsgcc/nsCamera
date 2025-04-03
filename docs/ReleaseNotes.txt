@@ -2,16 +2,71 @@ nsCamera release notes
 
 Author: Jeremy Martin Hill (jerhill@llnl.gov)
 
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
 contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
-and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.  See
-license for disclaimers, notice of U.S. Government Rights and license terms and
-conditions.
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 
-2.1.1 - In Progress
+
+2.1.2 - February 2025
+
+    NEW FEATURES
+        Added 'readFrame' method to return only frame data
+        Added offline functions for processing fast readoff images
+        Added debug-level detailed messaging
+        Added split-column output (readoff option 'columns=2' to create separate images
+          for A and B sides)
+        Added 'setTriggerDelay', 'setPhiDelay', and 'setExtClk' methods
+        Added 'selectOscillator' method
+        Added manual shutter functionality for Daedalus sensor with relevant registers
+        Added 'getSensTemp' method to read temperature on the Daedalus sensor
+        Added 'loadDumpedData' function to ingest data from fast readoff or emergency 
+          data dumps. Replaces 'loadTextFrames' function
+        Added 'saveHDF' method to save data to HDF5 file
+        Added 'getSensorStatus' method to get info on sensor and timing settings
+        If a readoff from the board is incomplete (after retries), the code will 
+          automatically pad the data stream with zeros to generate frames of the 
+          expected size
+        'getMonV' and related methods return -1 for invalid reads
+
+    MAJOR CHANGES
+        The v1 board is no longer supported for use with the Daedalus sensor
+
+    MINOR CHANGES
+        Added 'timeout' parameter to CameraAssembler instantiation to set timeout for 
+        connecting via Gigabit Ethernet
+        Added registers: SUSPEND_TIME, FPA_INTERFACE_STATE, DELAY_READOFF,
+          DELAY_ASSERTION_ROWDCD_EN, HST_EXT_CLK_HALF_PER
+        Added phi registers: HST_PHI_DELAY_DATA, EXT_PHI_CLK_SH0_ON, etc.
+        Added RSL configuration registers: RSL_CONFIG_DATA_B0, RSL_ZDT_MODE_A_EN, etc.
+        Added subregisters: READOFF_DELAY_EN, PHI_DELAY_A, PHI_DELAY_B, MANSHUT_MODE,
+          INTERLACING_EN, ZDT_A, ZDT_B, HST_DEL_EN, PHI_DELAY_A, PHI_DELAY_B
+        Refactored sensor classes to create base class
+        Refactored utility functions to remove from classes
+        Added verbosity parameter to testSuite.py
+        Added hemisphere option to setZeroDeadTime, setInterlacing
+        Uniform hemisphere labeling: L/R is now A/B
+        'setRegister' and 'setSubregister' methods now accept either integer input or 
+          strings beginning with '0x' or '0b'
+        'setTiming' and 'setArbTiming' methods accept side="" or side=None to set timing 
+          for both sides in a single method call
+        'setTiming' method accepts 0,0 timing arguments to clear timing register
+        If tuning fails in setPotV, retries with tune=False
+        Manual shutters minimum timing increased to 75 ns
+        'loadDumpedData', 'generateFrames', 'saveTiffs', and 'plotFrames' converted to 
+          stand-alone functions (import from nsCamera.utils.misc)
+        Removed dual-edge triggering functionality
+
+    BUG FIXES
+        Fixed subtle bug preventing saveTiffs from saving single excerpted frame
+        Fixed some legitimate timing schemes that couldn't be programmed
+
+
+2.1.1 - July 2021
 
     NEW FEATURES
         'logtag' parameter for CameraAssembler adds custom tag to logging messages for
@@ -29,6 +84,7 @@ conditions.
         Added 'index' parameter to saveTiffs and saveNumpys
         Updated default python distribution to 3.9
         Updated various dictionaries to OrderedDicts for human readability
+
 
 2.1.0 - October 2020
 
@@ -249,11 +305,11 @@ conditions.
         consistent signature for arm() functions across comm types
 
 ------------------------------------------------------
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
 contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
-and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.  See
-license for disclaimers, notice of U.S. Government Rights and license terms and
-conditions.
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.

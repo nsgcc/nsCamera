@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-The LLNLv4 board is defined here, including monitors and other board-specific settings
+LLNLv4 board definition, including monitors, DACS, and other board-specific settings
 
-Author: Matthew Dayton (dayton5@llnl.gov)
 Author: Jeremy Martin Hill (jerhill@llnl.gov)
+Author: Matthew Dayton (dayton5@llnl.gov)
 
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 
-Version: 2.1.1  (July 2021)
+Version: 2.1.2 (February 2025)
 """
 
 import logging
@@ -36,7 +36,7 @@ class llnl_v4:
 
     # FPGA register map - use '.upper()' on keys to ensure uppercase lookup
     registers = OrderedDict(
-        {  # definitions current as of ICD 2.0
+        {
             "FPGA_NUM": "000",
             "FPGA_REV": "001",
             "HS_TIMING_CTL": "010",
@@ -76,6 +76,10 @@ class llnl_v4:
             "FPA_FRAME_FINAL": "045",
             "FPA_DIVCLK_EN_ADDR": "046",
             "FPA_OSCILLATOR_SEL_ADDR": "047",
+            "SUSPEND_TIME": "04D",
+            "FPA_INTERFACE_STATE": "04E",
+            "DELAY_READOFF": "04F",
+            "STAT_REG_SEC": "060",
             "ADC_CTL": "090",
             "ADC1_CONFIG_DATA": "091",
             "ADC2_CONFIG_DATA": "092",
@@ -96,9 +100,7 @@ class llnl_v4:
 
     subregisters = [
         ## R/W subregs
-        # Consistent with ICD usage, start_bit is msb eg, for [7..0] start_bit is 7.
-        #   This can cause confusion because the string indices increase left to right
-        #   (subreg name, register name, start bit, width, writable)
+        # Consistent with ICD usage, start_bit is msb e.g., for [7..0] start_bit is 7.
         ("HST_MODE", "HS_TIMING_CTL", 0, 1, True),
         ("SW_TRIG_START", "SW_TRIGGER_CONTROL", 0, 1, True),
         ("SW_COARSE_TRIGGER", "SW_COARSE_CONTROL", 0, 1, True),
@@ -106,6 +108,7 @@ class llnl_v4:
         ("COLQUENCHEN", "CTRL_REG", 2, 1, True),
         ("POWERSAVE", "CTRL_REG", 3, 1, True),
         ("PDBIAS_LOW", "CTRL_REG", 6, 1, True),
+        # ("SWACK", "CTRL_REG", 10, 1, True),
         ("DACA", "DAC_REG_A_AND_B", 31, 16, True),
         ("DACB", "DAC_REG_A_AND_B", 15, 16, True),
         ("DACC", "DAC_REG_C_AND_D", 31, 16, True),
@@ -122,16 +125,14 @@ class llnl_v4:
         ("MAXERR_UTTR", "DIAG_MAX_CNT_1", 31, 16, True),
         ("MAXERR_URTR", "DIAG_MAX_CNT_1", 15, 16, True),
         ("HW_TRIG_EN", "TRIGGER_CTL", 0, 1, True),
-        ("DUAL_EDGE_TRIG_EN", "TRIGGER_CTL", 1, 1, True),
         ("SW_TRIG_EN", "TRIGGER_CTL", 2, 1, True),
+        ("READOFF_DELAY_EN", "TRIGGER_CTL", 4, 1, True),
         ("READ_SRAM", "SRAM_CTL", 0, 1, True),
         ("RESET_TIMER", "TIMER_CTL", 0, 1, True),
         ("OSC_SELECT", "FPA_OSCILLATOR_SEL_ADDR", 1, 2, True),
         ("PPER", "ADC_PPER", 7, 8, True),
         ## Read-only subregs
         # Consistent with ICD usage, start_bit is msb e.g., for [7..0] start_bit is 7.
-        #   This can cause confusion for packet handling because the string indices
-        #   increase left to right
         # WARNING: reading a subregister may clear the entire associated register!
         ("SRAM_READY", "STAT_REG", 0, 1, False),
         ("STAT_COARSE", "STAT_REG", 1, 1, False),
@@ -140,10 +141,11 @@ class llnl_v4:
         ("STAT_SENSREADDONE", "STAT_REG", 6, 1, False),
         ("STAT_SRAMREADSTART", "STAT_REG", 7, 1, False),
         ("STAT_SRAMREADDONE", "STAT_REG", 8, 1, False),
-        ("STAT_HSTCONFIGURED", "STAT_REG", 9, 1, False),
+        ("STAT_HSTCONFIGSTART", "STAT_REG", 9, 1, False),
         ("STAT_ADCSCONFIGURED", "STAT_REG", 10, 1, False),
         ("STAT_DACSCONFIGURED", "STAT_REG", 11, 1, False),
         ("STAT_TIMERCOUNTERRESET", "STAT_REG", 13, 1, False),
+        ("STAT_HSTCONFIGDONE", "STAT_REG", 16, 1, False),
         ("STAT_ARMED", "STAT_REG", 14, 1, False),
         ("STAT_TEMP", "STAT_REG", 23, 7, False),
         ("STAT_PRESS", "STAT_REG", 31, 8, False),
@@ -176,45 +178,6 @@ class llnl_v4:
         ("MON_CH16", "ADC6_DATA_4", 23, 12, False),
     ]
 
-    dummySensorVals = [
-        [
-            32767,
-            32767,
-            32767,
-            32767,
-            32767,
-            30311,
-            27555,
-            24868,
-            2960,
-            5799,
-            8581,
-            11351,
-            14105,
-            16787,
-            19559,
-            22230,
-        ],
-        [
-            2962,
-            5790,
-            8581,
-            11341,
-            14087,
-            16851,
-            19521,
-            22134,
-            32767,
-            32767,
-            32767,
-            32767,
-            32767,
-            30291,
-            27567,
-            24915,
-        ],
-    ]
-
     def __init__(self, camassem):
         self.ca = camassem
         self.logcrit = self.ca.logcritbase + "[LLNL_v4] "
@@ -222,7 +185,7 @@ class llnl_v4:
         self.logwarn = self.ca.logwarnbase + "[LLNL_v4] "
         self.loginfo = self.ca.loginfobase + "[LLNL_v4] "
         self.logdebug = self.ca.logdebugbase + "[LLNL_v4] "
-        logging.info(self.loginfo + "Iinitializing board object")
+        logging.info(self.loginfo + "Initializing board object")
         self.VREF = 3.3  # must be supplied externally for ADC128S102
         self.ADC5_mult = 1
 
@@ -244,94 +207,96 @@ class llnl_v4:
         self.defoff = 34.5  # default pressure sensor offset
         self.defsens = 92.5  # default pressure sensor sensitivity
 
+        # TODO: move to sensor scripts?
         # map channels to signal names for abstraction at the camera assembler level;
         #   each requires a corresponding entry in 'subregisters'
-        if self.ca.sensorname == "icarus" or self.ca.sensorname == "icarus2":
-            self.subreg_aliases = OrderedDict(
-                {
-                    "HST_A_PDELAY": "DACA",
-                    "HST_A_NDELAY": "DACB",
-                    "HST_B_PDELAY": "DACC",
-                    "HST_B_NDELAY": "DACD",
-                    "HST_RO_IBIAS": "DACE",
-                    "HST_RO_NC_IBIAS": "DACE",
-                    "HST_OSC_CTL": "DACF",
-                    "VAB": "DACG",
-                    "VRST": "DACH",
-                    "MON_PRES_MINUS": "MON_CH1",
-                    "MON_PRES_PLUS": "MON_CH2",
-                    "MON_TEMP": "MON_CH3",
-                    "MON_COL_TOP_IBIAS_IN": "MON_CH4",
-                    "MON_HST_OSC_R_BIAS": "MON_CH5",
-                    "MON_VAB": "MON_CH6",
-                    "MON_HST_RO_IBIAS": "MON_CH7",
-                    "MON_HST_RO_NC_IBIAS": "MON_CH7",
-                    "MON_VRST": "MON_CH8",
-                    "MON_COL_BOT_IBIAS_IN": "MON_CH9",
-                    "MON_HST_A_PDELAY": "MON_CH10",
-                    "MON_HST_B_NDELAY": "MON_CH11",
-                    "DOSIMETER": "MON_CH12",
-                    "MON_HST_OSC_VREF_IN": "MON_CH13",
-                    "MON_HST_B_PDELAY": "MON_CH14",
-                    "MON_HST_OSC_CTL": "MON_CH15",
-                    "MON_HST_A_NDELAY": "MON_CH16",
-                    "MON_CHA": "MON_CH10",
-                    "MON_CHB": "MON_CH16",
-                    "MON_CHC": "MON_CH14",
-                    "MON_CHD": "MON_CH11",
-                    "MON_CHE": "MON_CH7",
-                    "MON_CHF": "MON_CH15",
-                    "MON_CHG": "MON_CH6",
-                    "MON_CHH": "MON_CH8",
-                }
-            )
-            # Read-only; identifies controls corresponding to monitors
-            self.monitor_controls = OrderedDict(
-                {
-                    "MON_CH10": "DACA",
-                    "MON_CH16": "DACB",
-                    "MON_CH14": "DACC",
-                    "MON_CH11": "DACD",
-                    "MON_CH7": "DACE",
-                    "MON_CH15": "DACF",
-                    "MON_CH6": "DACG",
-                    "MON_CH8": "DACH",
-                }
-            )
-        else:  # Daedalus
-            self.subreg_aliases = OrderedDict(
-                {
-                    "HST_OSC_VREF_IN": "DACC",
-                    "HST_OSC_CTL": "DACE",
-                    "COL_TST_IN": "DACF",
-                    "VAB": "DACG",
-                    "MON_PRES_MINUS": "MON_CH1",
-                    "MON_PRES_PLUS": "MON_CH2",
-                    "MON_TEMP": "MON_CH3",
-                    "MON_VAB": "MON_CH6",
-                    "MON_HST_OSC_CTL": "MON_CH7",
-                    "MON_TSENSE_OUT": "MON_CH10",
-                    "MON_BGREF": "MON_CH11",
-                    "DOSIMETER": "MON_CH12",
-                    "MON_HST_RO_NC_IBIAS": "MON_CH13",
-                    "MON_HST_OSC_VREF_IN": "MON_CH14",
-                    "MON_COL_TST_IN": "MON_CH15",
-                    "MON_HST_OSC_PBIAS_PAD": "MON_CH16",
-                    "MON_CHC": "MON_CH14",
-                    "MON_CHE": "MON_CH7",
-                    "MON_CHF": "MON_CH15",
-                    "MON_CHG": "MON_CH6",
-                }
-            )
-            # Read-only; identifies controls corresponding to monitors
-            self.monitor_controls = OrderedDict(
-                {
-                    "MON_CH14": "DACC",
-                    "MON_CH7": "DACE",
-                    "MON_CH15": "DACF",
-                    "MON_CH6": "DACG",
-                }
-            )
+        self.icarus_subreg_aliases = OrderedDict(
+            {
+                "HST_A_PDELAY": "DACA",
+                "HST_A_NDELAY": "DACB",
+                "HST_B_PDELAY": "DACC",
+                "HST_B_NDELAY": "DACD",
+                "HST_RO_IBIAS": "DACE",
+                "HST_RO_NC_IBIAS": "DACE",
+                "HST_OSC_CTL": "DACF",
+                "VAB": "DACG",
+                "VRST": "DACH",
+                "MON_PRES_MINUS": "MON_CH1",
+                "MON_PRES_PLUS": "MON_CH2",
+                "MON_TEMP": "MON_CH3",
+                "MON_COL_TOP_IBIAS_IN": "MON_CH4",
+                "MON_HST_OSC_R_BIAS": "MON_CH5",
+                "MON_VAB": "MON_CH6",
+                "MON_HST_RO_IBIAS": "MON_CH7",
+                "MON_HST_RO_NC_IBIAS": "MON_CH7",
+                "MON_VRST": "MON_CH8",
+                "MON_COL_BOT_IBIAS_IN": "MON_CH9",
+                "MON_HST_A_PDELAY": "MON_CH10",
+                "MON_HST_B_NDELAY": "MON_CH11",
+                "DOSIMETER": "MON_CH12",
+                "MON_HST_OSC_VREF_IN": "MON_CH13",
+                "MON_HST_B_PDELAY": "MON_CH14",
+                "MON_HST_OSC_CTL": "MON_CH15",
+                "MON_HST_A_NDELAY": "MON_CH16",
+                "MON_CHA": "MON_CH10",
+                "MON_CHB": "MON_CH16",
+                "MON_CHC": "MON_CH14",
+                "MON_CHD": "MON_CH11",
+                "MON_CHE": "MON_CH7",
+                "MON_CHF": "MON_CH15",
+                "MON_CHG": "MON_CH6",
+                "MON_CHH": "MON_CH8",
+            }
+        )
+        # Read-only; identifies controls corresponding to monitors
+        self.icarus_monitor_controls = OrderedDict(
+            {
+                "MON_CH10": "DACA",
+                "MON_CH16": "DACB",
+                "MON_CH14": "DACC",
+                "MON_CH11": "DACD",
+                "MON_CH7": "DACE",
+                "MON_CH15": "DACF",
+                "MON_CH6": "DACG",
+                "MON_CH8": "DACH",
+            }
+        )
+        self.daedalus_subreg_aliases = OrderedDict(
+            {
+                "HST_OSC_VREF_IN": "DACC",
+                "HST_OSC_CTL": "DACE",
+                "COL_TST_IN": "DACF",
+                "VAB": "DACG",
+                "VRST": "DACH",
+                "MON_PRES_MINUS": "MON_CH1",
+                "MON_PRES_PLUS": "MON_CH2",
+                "MON_TEMP": "MON_CH3",
+                "MON_VAB": "MON_CH6",
+                "MON_HST_OSC_CTL": "MON_CH7",
+                "MON_TSENSE_OUT": "MON_CH10",
+                "MON_BGREF": "MON_CH11",
+                "DOSIMETER": "MON_CH12",
+                "MON_HST_RO_NC_IBIAS": "MON_CH13",
+                "MON_HST_OSC_VREF_IN": "MON_CH14",
+                "MON_COL_TST_IN": "MON_CH15",
+                "MON_HST_OSC_PBIAS_PAD": "MON_CH16",
+                "MON_CHC": "MON_CH14",
+                "MON_CHE": "MON_CH7",
+                "MON_CHF": "MON_CH15",
+                "MON_CHG": "MON_CH6",
+                "MON_CHH": "MON_CH8",
+            }
+        )
+        # Read-only; identifies controls corresponding to monitors
+        self.daedalus_monitor_controls = OrderedDict(
+            {
+                "MON_CH14": "DACC",
+                "MON_CH7": "DACE",
+                "MON_CH15": "DACF",
+                "MON_CH6": "DACG",
+                "MON_CH8": "DACH",
+            }
+        )
         self.subreglist = []
         for s in self.subregisters:
             self.subreglist.append(s[0].upper())
@@ -364,7 +329,7 @@ class llnl_v4:
         Returns:
             tuple (error string, response string) from final control message
         """
-        logging.info(self.loginfo + "initBoard")
+        logging.info(self.loginfo + "initBoard LLNLv4")
         control_messages = []
         self.clearStatus()
         self.configADCs()
@@ -377,6 +342,7 @@ class llnl_v4:
         Returns:
             tuple (empty string, empty string)
         """
+        logging.debug(self.logdebug + "InitPots")
         return "", ""
 
     def latchPots(self):
@@ -407,7 +373,7 @@ class llnl_v4:
             tuple (error string, response string) from final control message
         """
         logging.info(self.loginfo + "initSensor")
-        if self.ca.FPGANum[7] is not self.ca.sensor.fpganumID:
+        if int(self.ca.FPGANum[7]) != self.ca.sensor.fpganumID:
             logging.warning(
                 self.logwarn + "unable to confirm sensor compatibility with FPGA"
             )
@@ -424,11 +390,11 @@ class llnl_v4:
             )
             setattr(self, s[0].upper(), sr)
             self.subreglist.append(s[0])
-        # self.ca.checkSensorVoltStat() # SENSOR_VOLT_STAT and SENSOR_VOLT_CTL are
-        #   deactivated for v4 icarus and daedalus firmware for now.
+        # TODO: self.ca.checkSensorVoltStat() # SENSOR_VOLT_STAT and SENSOR_VOLT_CTL are
+        #   deactivated for v4 icarus and daedalus firmware for now, is this permanent?
         control_messages = self.ca.sensorSpecific() + [
             # ring w/caps=01, relax=00, ring w/o caps = 02
-            ("FPA_OSCILLATOR_SEL_ADDR", "00000000"),
+            ("OSC_SELECT", "00"),
             ("FPA_DIVCLK_EN_ADDR", "00000001"),
         ]
         return self.ca.submitMessages(control_messages, " initSensor: ")
@@ -446,6 +412,7 @@ class llnl_v4:
             # just in case ADC_RESET was set on any of the ADCs (pull all ADCs out of
             #   reset)
             ("ADC_RESET", "00000000"),
+            # workaround for uncertain behavior after previous readoff
             ("ADC1_CONFIG_DATA", "FFFFFFFF"),
             ("ADC2_CONFIG_DATA", "FFFFFFFF"),
             ("ADC3_CONFIG_DATA", "FFFFFFFF"),
@@ -483,7 +450,6 @@ class llnl_v4:
         self.ca.armed = False
         control_messages = [
             ("HW_TRIG_EN", "0"),
-            ("DUAL_EDGE_TRIG_EN", "0"),
             ("SW_TRIG_EN", "0"),
         ]
         self.ca.comms.skipError = False
@@ -491,7 +457,11 @@ class llnl_v4:
 
     def startCapture(self, mode="Hardware"):
         """
-        Reads ADC data into SRAM
+        Selects trigger mode and enables board for image capture
+
+        Args:
+            mode: trigger mode ("hardware"|"software"|"dual|"h"|"s"|"d" , is case-
+              insensitive)
 
         Returns:
             tuple (error string, response string) from final control message
@@ -502,22 +472,14 @@ class llnl_v4:
         else:
             timingReg = "HST_MODE"
 
-        if mode.upper() == "SOFTWARE":
+        if mode.upper()[0] == "S":  # SOFTWARE
             trigmess = [
                 ("HW_TRIG_EN", "0"),
-                ("DUAL_EDGE_TRIG_EN", "0"),
                 ("SW_TRIG_EN", "1"),
                 ("SW_TRIG_START", "1"),
             ]
-        elif mode.upper() == "DUAL":
-            trigmess = [
-                ("SW_TRIG_EN", "0"),
-                ("HW_TRIG_EN", "1"),
-                ("DUAL_EDGE_TRIG_EN", "1"),
-            ]
         else:  # HARDWARE
             trigmess = [
-                ("DUAL_EDGE_TRIG_EN", "0"),
                 ("SW_TRIG_EN", "0"),
                 ("HW_TRIG_EN", "1"),
             ]
@@ -553,7 +515,7 @@ class llnl_v4:
         Returns:
             error string
         """
-        logging.info(self.loginfo + "waitForSRAM")
+        logging.info(self.loginfo + "waitForSRAM, timeout = " + str(timeout))
         waiting = True
         starttime = time.time()
         err = ""
@@ -573,7 +535,9 @@ class llnl_v4:
                 err += self.logerr + "SRAM timeout; proceeding with download attempt"
                 logging.error(err)
                 return err
-
+            # Slow down for debugging (avoid thousands of messages)
+            if self.ca.verbose >= 5:
+                time.sleep(0.5)
         return err
 
     def getTimer(self):
@@ -583,6 +547,7 @@ class llnl_v4:
         Returns:
             timer value as integer
         """
+        logging.info(self.loginfo + "getTimer")
         err, rval = self.ca.getRegister("TIMER_VALUE")
         if err:
             logging.error(
@@ -605,20 +570,22 @@ class llnl_v4:
 
     def enableLED(self, status):
         """
-        Dummy function; feature is not implemented on Icarus
+        Dummy function; feature is not implemented on LLNL_V4 board
 
         Returns:
-            tuple: dummy of (error string, response string from subregister set)
+            tuple: dummy of (error string, response string from setSubregister())
         """
+        del status
         return "", "0"
 
     def setLED(self, LED, status):
         """
-        Dummy function; feature is not implemented on Icarus
+        Dummy function; feature is not implemented on LLNL_V4 board
 
         Returns:
-            tuple: dummy of (error string, response string from subregister set)
+            tuple: dummy of (error string, response string from setSubregister())
         """
+        del LED, status
         return "", "0"
 
     def setPowerSave(self, status):
@@ -629,36 +596,36 @@ class llnl_v4:
             status: setting for powersave option (1 is enabled)
 
         Returns:
-            tuple (error string, response string from subregister set)
+            tuple (error string, response string from setSubregister())
         """
         if status:
             status = 1
         return self.ca.setSubregister("POWERSAVE", str(status))
 
-    def setPPER(self, time):
+    def setPPER(self, pollperiod):
         """
         Set polling period for ADCs.
         Args:
-            time: milliseconds, between 1 and 255; defaults to 50
+            pollperiod: milliseconds, between 1 and 255; defaults to 50
 
         Returns:
-            tuple (error string, response string from subregister set OR invalid time
+            tuple (error string, response string from setSubregister() OR invalid time
               setting string)
         """
-        if not time:
-            time = 50
-        if not isinstance(time, int) or time < 1 or time > 255:
+        if pollperiod is None:
+            pollperiod = 50
+        if not isinstance(pollperiod, int) or pollperiod < 1 or pollperiod > 255:
             err = (
                 self.logerr + "invalid poll period submitted. Setting remains "
                 "unchanged. "
             )
             logging.error(err)
-            return err, str(time)
+            return err, str(pollperiod)
         else:
-            binset = bin(time)[2:].zfill(8)
+            binset = bin(pollperiod)[2:].zfill(8)
             return self.ca.setSubregister("PPER", binset)
 
-    def getTemp(self, scale):
+    def getTemp(self, scale=None):
         """
         Read temperature sensor
         Args:
@@ -683,7 +650,7 @@ class llnl_v4:
             temp = ctemp
         return temp
 
-    def getPressure(self, offset, sensitivity, units):
+    def getPressure(self, offset=None, sensitivity=None, units=None):
         """
         Read pressure sensor. Uses default offset and sensitivity defined in init
           function unless alternatives are specified. NOTE: to reset defaults, reassign
@@ -698,18 +665,16 @@ class llnl_v4:
         Returns:
             Pressure as float in chosen units, defaults to torr
         """
-
         if offset is None:
             offset = self.defoff
         if sensitivity is None:
             sensitivity = self.defsens
         if units is None:
             units = "torr"
-
         pplus = self.ca.getMonV("MON_PRES_PLUS")
         pminus = self.ca.getMonV("MON_PRES_MINUS")
         delta = 1000 * (pplus - pminus)
-        ratio = sensitivity / 30  # nominal =  21  / 30
+        ratio = sensitivity / 30  # nominal is 21/30
         psi = (delta - offset) / ratio
         if units.lower() == "psi":
             press = psi
@@ -769,55 +734,56 @@ class llnl_v4:
         """
         statusbits = self.checkStatus()
         statusbits2 = self.checkStatus2()
-        print("Status report:")
-        print("-------------")
+
+        logging.info(self.loginfo + "Status report:")
         if int(statusbits[0]):
-            print("Sensor read complete")
+            print(self.loginfo + "Sensor read complete")
         if int(statusbits[1]):
-            print("Coarse trigger detected")
+            print(self.loginfo + "Coarse trigger detected")
         if int(statusbits[2]):
-            print("Fine trigger detected")
-        if int(statusbits[3]):
-            print("W3_Top_L_Edge1 detected")
-        if int(statusbits[4]):
-            print("W3_Top_R_Edge1 detected")
+            print(self.loginfo + "Fine trigger detected")
         if int(statusbits[5]):
-            print("Sensor readout in progress")
+            print(self.loginfo + "Sensor readout in progress")
         if int(statusbits[6]):
-            print("Sensor readout complete")
+            print(self.loginfo + "Sensor readout complete")
         if int(statusbits[7]):
-            print("SRAM readout started")
+            print(self.loginfo + "SRAM readout started")
         if int(statusbits[8]):
-            print("SRAM readout complete")
+            print(self.loginfo + "SRAM readout complete")
         if int(statusbits[9]):
-            print("High-speed timing configured")
+            print(self.loginfo + "High-speed timing configuration started")
         if int(statusbits[10]):
-            print("All ADCs configured")
+            print(self.loginfo + "All ADCs configured")
         if int(statusbits[11]):
-            print("All DACs configured")
-        if int(statusbits[12]):
-            print("HST_All_W_En detected")
+            print(self.loginfo + "All DACs configured")
         if int(statusbits[13]):
-            print("Timer has reset")
+            print(self.loginfo + "Timer has reset")
         if int(statusbits[14]):
-            print("Camera is Armed")
+            print(self.loginfo + "Camera is Armed")
+        if int(statusbits[16]):
+            print(self.loginfo + "High-speed timing configuration complete")
+        self.ca.sensor.reportStatusSensor(statusbits, statusbits2)
         temp = int(statusbits[23:16:-1], 2) * 3.3 * 1000 / 4096
-        print("Temperature reading: " + "{0:1.2f}".format(temp) + " C")
+        logging.info(
+            self.loginfo + "Temperature reading: " + "{0:1.2f}".format(temp) + " C"
+        )
         press = int(statusbits[:23:-1], 2) * 3.3 * 1000 / 4096
-        print("Pressure sensor reading: " + "{0:1.2f}".format(press) + " mV")
+        logging.info(
+            self.loginfo
+            + "Pressure sensor reading: "
+            + "{0:1.2f}".format(press)
+            + " mV"
+        )
         if int(statusbits2[0]):
-            print("FPA_IF_TO")
+            print(self.loginfo + "FPA_IF_TO")
         if int(statusbits2[1]):
-            print("SRAM_RO_TO")
+            print(self.loginfo + "SRAM_RO_TO")
         if int(statusbits2[2]):
-            print("PixelRd Timeout Error")
+            print(self.loginfo + "PixelRd Timeout Error")
         if int(statusbits2[3]):
-            print("UART_TX_TO_RST")
+            print(self.loginfo + "UART_TX_TO_RST")
         if int(statusbits2[4]):
-            print("UART_RX_TO_RST")
-        if int(statusbits2[5]):
-            print("PDBIAS Unready")
-        print("-------------")
+            print(self.loginfo + "UART_RX_TO_RST")
 
     def reportEdgeDetects(self):
         """
@@ -833,7 +799,7 @@ class llnl_v4:
         for frame in range(4):
             for vert in ("TOP", "BOT"):
                 for edge in range(1, 3):
-                    for hor in ("L", "R"):
+                    for hor in ("A", "B"):
                         detname = (
                             "W"
                             + str(frame)
@@ -847,17 +813,15 @@ class llnl_v4:
                         detdict[detname] = bitsrev[bitidx]
                         bitidx += 1
         # remove faked detect
-        del detdict["W0_TOP_L_EDGE1"]
-        print("Edge detect report:")
-        print("-------------")
+        del detdict["W0_TOP_A_EDGE1"]
+        logging.info(self.loginfo + "Edge detect report:")
         for key, val in detdict.items():
-            print(key + ": " + val)
-        print("-------------")
+            logging.info(self.loginfo + key + ": " + val)
 
     def dumpStatus(self):
         """
         Create dictionary of status values, DAC settings, monitor values, and register
-          values
+          values.
 
         Returns:
             dictionary of system diagnostic values
@@ -870,14 +834,12 @@ class llnl_v4:
 
         statDict = OrderedDict(
             {
-                "Temperature sensor reading": "{0:1.2f}".format(temp) + " C",
-                "Pressure reading": str(round(self.ca.getPressure(), 3)) + " Torr",
-                "Pressure sensor reading": "{0:1.2f}".format(press) + " mV",
+                "Temperature sensor reading (Deg C)": "{0:1.2f}".format(temp),
+                "Pressure reading (Torr)": str(round(self.ca.getPressure(), 3)),
+                "Pressure sensor reading (mV)": "{0:1.2f}".format(press),
                 "Sensor read complete": str(statusbits[0]),
                 "Coarse trigger detected": str(statusbits[1]),
                 "Fine trigger detected": str(statusbits[2]),
-                "W3_Top_L_Edge1 detected": str(statusbits[3]),
-                "W3_Top_R_Edge1 detected": str(statusbits[4]),
                 "Sensor readout in progress": str(statusbits[5]),
                 "Sensor readout complete": str(statusbits[6]),
                 "SRAM readout started": str(statusbits[7]),
@@ -885,7 +847,6 @@ class llnl_v4:
                 "High-speed timing configured": str(statusbits[9]),
                 "All ADCs configured": str(statusbits[10]),
                 "All DACs configured": str(statusbits[11]),
-                "HST_All_W_En detected": str(statusbits[12]),
                 "Timer has reset": str(statusbits[13]),
                 "Camera is Armed": str(statusbits[14]),
                 "FPA_IF_TO": str(statusbits2[0]),
@@ -897,34 +858,54 @@ class llnl_v4:
             }
         )
 
+        if self.ca.sensorname == "icarus" or self.ca.sensorname == "icarus2":
+            senslabs = {
+                3: "W3_Top_A_Edge1 detected",
+                4: "W3_Top_B_Edge1 detected",
+                12: "HST_All_W_En detected",
+            }
+        else:
+            senslabs = {
+                3: "RSLROWOUTA",
+                4: "RSLROWOUTB",
+                12: "RSLNALLWENB",
+                15: "RSLNALLWENA",
+                16: "Config HST is done",
+            }
+        sensDict = {senslabs[x]: str(statusbits[x]) for x in senslabs.keys()}
+
         DACDict = OrderedDict()
         MonDict = OrderedDict()
         for entry in self.subreg_aliases:
             if self.subreg_aliases[entry][0] == "D":
-                val = str(round(self.ca.getPotV(entry), 3)) + " V"
+                val = str(round(self.ca.getPotV(entry), 3))
                 DACDict["DAC_" + entry] = val
             else:
-                val = str(round(self.ca.getMonV(entry), 3)) + " V"
+                val = str(round(self.ca.getMonV(entry), 3))
                 MonDict[entry] = val
 
         regDict = OrderedDict()
         for key in self.registers.keys():
-            err, rval = self.ca.getRegister(key)
-            regDict[key] = rval
+            # Load in all registers except for the read-clear status registers.
+            if key == "STAT_REG_SRC" or key == "STAT_REG2_SRC":
+                pass
+            else:
+                err, rval = self.ca.getRegister(key)
+                regDict[key] = rval
 
         dumpDict = OrderedDict()
-        for x in [statDict, MonDict, DACDict, regDict]:
+        for x in [statDict, sensDict, MonDict, DACDict, regDict]:
             dumpDict.update(x)
         return dumpDict
 
 
 """
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.  
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 """

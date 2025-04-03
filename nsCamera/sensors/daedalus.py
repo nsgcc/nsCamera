@@ -2,53 +2,60 @@
 """
 Parameters and functions specific to the daedalus three-frame sensor
 
+
 Author: Jeremy Martin Hill (jerhill@llnl.gov)
 
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 
-Version: 2.1.1  (July 2021)
+Version: 2.1.2 (February 2025)
 """
 
-import itertools
 import logging
+import numbers
 from collections import OrderedDict
 
 import numpy as np
 
+from nsCamera.sensors.sensorBase import sensorBase
+from nsCamera.utils.misc import flattenlist
 
-class daedalus:
-    def __init__(self, camassem):
-        self.ca = camassem
-        self.logcrit = self.ca.logcritbase + "[Daedalus] "
-        self.logerr = self.ca.logerrbase + "[Daedalus] "
-        self.logwarn = self.ca.logwarnbase + "[Daedalus] "
-        self.loginfo = self.ca.loginfobase + "[Daedalus] "
-        self.logdebug = self.ca.logdebugbase + "[Daedalus] "
-        logging.info(self.loginfo + "initializing sensor object")
 
-        self.minframe = 0
-        self.maxframe = 2
-        self.firstframe = self.minframe
-        self.lastframe = self.maxframe
-        self.nframes = self.maxframe - self.minframe + 1
-        self.maxwidth = 512
-        self.maxheight = 1024
-        self.firstrow = 0
-        self.lastrow = self.maxheight - 1
-        self.width = self.maxwidth
-        self.height = self.maxheight
-        self.bytesperpixel = 2
-        self.fpganumID = "2"  # last nybble of FPGA_NUM
-        self.interlacing = 0
-        self.ZDT = False
-        self.HFW = False
+class daedalus(sensorBase):
+    specwarn = ""
+    minframe = 0  # fixed value for sensor
+    maxframe = 2  # fixed value for sensor
+    maxwidth = 512  # fixed value for sensor
+    maxheight = 1024  # fixed value for sensor
+    bytesperpixel = 2
+    fpganumID = 2  # last nybble of FPGA_NUM
+    detect = "DAEDALUS_DET"
+    sensfam = "Daedalus"
+    loglabel = "[Daedalus] "
+    ZDT = False
+    HFW = False
+    firstframe = 0
+    lastframe = 2
+    nframes = 3
+    width = 512
+    height = 1024
+    firstrow = 0
+    lastrow = 1023
+    interlacing = [0, 0]
+    columns = 1
+    padToFull = True
+    toffset = -165.76  # default temperature sensor offset
+    tslope = 81.36  # default temperature sensor slope
+
+    def __init__(self, ca):
+        self.ca = ca
+        super(daedalus, self).__init__(ca)
 
         self.sens_registers = OrderedDict(
             {
@@ -57,185 +64,119 @@ class daedalus:
                 "HST_READBACK_B_LO": "01A",
                 "HST_READBACK_B_HI": "01B",
                 "HSTALLWEN_WAIT_TIME": "03F",
+                "VRESET_HIGH_VALUE": "04A",
                 "FRAME_ORDER_SEL": "04B",
+                "EXT_PHI_CLK_SH0_ON": "050",
+                "EXT_PHI_CLK_SH0_OFF": "051",
+                "EXT_PHI_CLK_SH1_ON": "052",
+                "EXT_PHI_CLK_SH1_OFF": "053",
+                "EXT_PHI_CLK_SH2_ON": "054",
                 "HST_TRIGGER_DELAY_DATA_LO": "120",
                 "HST_TRIGGER_DELAY_DATA_HI": "121",
-                "HST_PHI_DELAY_DATA_LO": "122",
-                "HST_PHI_DELAY_DATA_HI": "123",
-                "HST_TRIG_DELAY_READBACK_LO": "125",
-                "HST_TRIG_DELAY_READBACK_HI": "126",
-                "HST_PHI_DELAY_READBACK_LO": "127",
-                "HST_PHI_DELAY_READBACK_HI": "128",
+                "HST_PHI_DELAY_DATA": "122",
+                "HST_EXT_CLK_HALF_PER": "129",
                 "HST_COUNT_TRIG": "130",
                 "HST_DELAY_EN": "131",
-                "HST_TEST_PHI_EN": "132",
                 "RSL_HFW_MODE_EN": "133",
-                "RSL_ZDT_MODE_R_EN": "135",
-                "RSL_ZDT_MODE_L_EN": "136",
+                "RSL_ZDT_MODE_B_EN": "135",
+                "RSL_ZDT_MODE_A_EN": "136",
                 "BGTRIMA": "137",
                 "BGTRIMB": "138",
                 "COLUMN_TEST_EN": "139",
-                "RSL_CONFIG_DATA_R0": "140",
-                "RSL_CONFIG_DATA_R1": "141",
-                "RSL_CONFIG_DATA_R2": "142",
-                "RSL_CONFIG_DATA_R3": "143",
-                "RSL_CONFIG_DATA_R4": "144",
-                "RSL_CONFIG_DATA_R5": "145",
-                "RSL_CONFIG_DATA_R6": "146",
-                "RSL_CONFIG_DATA_R7": "147",
-                "RSL_CONFIG_DATA_R8": "148",
-                "RSL_CONFIG_DATA_R9": "149",
-                "RSL_CONFIG_DATA_R10": "14A",
-                "RSL_CONFIG_DATA_R11": "14B",
-                "RSL_CONFIG_DATA_R12": "14C",
-                "RSL_CONFIG_DATA_R13": "14D",
-                "RSL_CONFIG_DATA_R14": "14E",
-                "RSL_CONFIG_DATA_R15": "14F",
-                "RSL_CONFIG_DATA_R16": "150",
-                "RSL_CONFIG_DATA_R17": "151",
-                "RSL_CONFIG_DATA_R18": "152",
-                "RSL_CONFIG_DATA_R19": "153",
-                "RSL_CONFIG_DATA_R20": "154",
-                "RSL_CONFIG_DATA_R21": "155",
-                "RSL_CONFIG_DATA_R22": "156",
-                "RSL_CONFIG_DATA_R23": "157",
-                "RSL_CONFIG_DATA_R24": "158",
-                "RSL_CONFIG_DATA_R25": "159",
-                "RSL_CONFIG_DATA_R26": "15A",
-                "RSL_CONFIG_DATA_R27": "15B",
-                "RSL_CONFIG_DATA_R28": "15C",
-                "RSL_CONFIG_DATA_R29": "15D",
-                "RSL_CONFIG_DATA_R30": "15E",
-                "RSL_CONFIG_DATA_R31": "15F",
-                "RSL_CONFIG_DATA_L0": "160",
-                "RSL_CONFIG_DATA_L1": "161",
-                "RSL_CONFIG_DATA_L2": "162",
-                "RSL_CONFIG_DATA_L3": "163",
-                "RSL_CONFIG_DATA_L4": "164",
-                "RSL_CONFIG_DATA_L5": "165",
-                "RSL_CONFIG_DATA_L6": "166",
-                "RSL_CONFIG_DATA_L7": "167",
-                "RSL_CONFIG_DATA_L8": "168",
-                "RSL_CONFIG_DATA_L9": "169",
-                "RSL_CONFIG_DATA_L10": "16A",
-                "RSL_CONFIG_DATA_L11": "16B",
-                "RSL_CONFIG_DATA_L12": "16C",
-                "RSL_CONFIG_DATA_L13": "16D",
-                "RSL_CONFIG_DATA_L14": "16E",
-                "RSL_CONFIG_DATA_L15": "16F",
-                "RSL_CONFIG_DATA_L16": "170",
-                "RSL_CONFIG_DATA_L17": "171",
-                "RSL_CONFIG_DATA_L18": "172",
-                "RSL_CONFIG_DATA_L19": "173",
-                "RSL_CONFIG_DATA_L20": "174",
-                "RSL_CONFIG_DATA_L21": "175",
-                "RSL_CONFIG_DATA_L22": "176",
-                "RSL_CONFIG_DATA_L23": "177",
-                "RSL_CONFIG_DATA_L24": "178",
-                "RSL_CONFIG_DATA_L25": "179",
-                "RSL_CONFIG_DATA_L26": "17A",
-                "RSL_CONFIG_DATA_L27": "17B",
-                "RSL_CONFIG_DATA_L28": "17C",
-                "RSL_CONFIG_DATA_L29": "17D",
-                "RSL_CONFIG_DATA_L30": "17E",
-                "RSL_CONFIG_DATA_L31": "17F",
-                "RSL_READ_BACK_R0": "180",
-                "RSL_READ_BACK_R1": "181",
-                "RSL_READ_BACK_R2": "182",
-                "RSL_READ_BACK_R3": "183",
-                "RSL_READ_BACK_R4": "184",
-                "RSL_READ_BACK_R5": "185",
-                "RSL_READ_BACK_R6": "186",
-                "RSL_READ_BACK_R7": "187",
-                "RSL_READ_BACK_R8": "188",
-                "RSL_READ_BACK_R9": "189",
-                "RSL_READ_BACK_R10": "18A",
-                "RSL_READ_BACK_R11": "18B",
-                "RSL_READ_BACK_R12": "18C",
-                "RSL_READ_BACK_R13": "18D",
-                "RSL_READ_BACK_R14": "18E",
-                "RSL_READ_BACK_R15": "18F",
-                "RSL_READ_BACK_R16": "190",
-                "RSL_READ_BACK_R17": "191",
-                "RSL_READ_BACK_R18": "192",
-                "RSL_READ_BACK_R19": "193",
-                "RSL_READ_BACK_R20": "194",
-                "RSL_READ_BACK_R21": "195",
-                "RSL_READ_BACK_R22": "196",
-                "RSL_READ_BACK_R23": "197",
-                "RSL_READ_BACK_R24": "198",
-                "RSL_READ_BACK_R25": "199",
-                "RSL_READ_BACK_R26": "19A",
-                "RSL_READ_BACK_R27": "19B",
-                "RSL_READ_BACK_R28": "19C",
-                "RSL_READ_BACK_R29": "19D",
-                "RSL_READ_BACK_R30": "19E",
-                "RSL_READ_BACK_R31": "19F",
-                "RSL_READ_BACK_L0": "1A0",
-                "RSL_READ_BACK_L1": "1A1",
-                "RSL_READ_BACK_L2": "1A2",
-                "RSL_READ_BACK_L3": "1A3",
-                "RSL_READ_BACK_L4": "1A4",
-                "RSL_READ_BACK_L5": "1A5",
-                "RSL_READ_BACK_L6": "1A6",
-                "RSL_READ_BACK_L7": "1A7",
-                "RSL_READ_BACK_L8": "1A8",
-                "RSL_READ_BACK_L9": "1A9",
-                "RSL_READ_BACK_L10": "1AA",
-                "RSL_READ_BACK_L11": "1AB",
-                "RSL_READ_BACK_L12": "1AC",
-                "RSL_READ_BACK_L13": "1AD",
-                "RSL_READ_BACK_L14": "1AE",
-                "RSL_READ_BACK_L15": "1AF",
-                "RSL_READ_BACK_L16": "1B0",
-                "RSL_READ_BACK_L17": "1B1",
-                "RSL_READ_BACK_L18": "1B2",
-                "RSL_READ_BACK_L19": "1B3",
-                "RSL_READ_BACK_L20": "1B4",
-                "RSL_READ_BACK_L21": "1B5",
-                "RSL_READ_BACK_L22": "1B6",
-                "RSL_READ_BACK_L23": "1B7",
-                "RSL_READ_BACK_L24": "1B8",
-                "RSL_READ_BACK_L25": "1B9",
-                "RSL_READ_BACK_L26": "1BA",
-                "RSL_READ_BACK_L27": "1BB",
-                "RSL_READ_BACK_L28": "1BC",
-                "RSL_READ_BACK_L29": "1BD",
-                "RSL_READ_BACK_L30": "1BE",
-                "RSL_READ_BACK_L31": "1BF",
+                "RSL_CONFIG_DATA_B0": "140",
+                "RSL_CONFIG_DATA_B1": "141",
+                "RSL_CONFIG_DATA_B2": "142",
+                "RSL_CONFIG_DATA_B3": "143",
+                "RSL_CONFIG_DATA_B4": "144",
+                "RSL_CONFIG_DATA_B5": "145",
+                "RSL_CONFIG_DATA_B6": "146",
+                "RSL_CONFIG_DATA_B7": "147",
+                "RSL_CONFIG_DATA_B8": "148",
+                "RSL_CONFIG_DATA_B9": "149",
+                "RSL_CONFIG_DATA_B10": "14A",
+                "RSL_CONFIG_DATA_B11": "14B",
+                "RSL_CONFIG_DATA_B12": "14C",
+                "RSL_CONFIG_DATA_B13": "14D",
+                "RSL_CONFIG_DATA_B14": "14E",
+                "RSL_CONFIG_DATA_B15": "14F",
+                "RSL_CONFIG_DATA_B16": "150",
+                "RSL_CONFIG_DATA_B17": "151",
+                "RSL_CONFIG_DATA_B18": "152",
+                "RSL_CONFIG_DATA_B19": "153",
+                "RSL_CONFIG_DATA_B20": "154",
+                "RSL_CONFIG_DATA_B21": "155",
+                "RSL_CONFIG_DATA_B22": "156",
+                "RSL_CONFIG_DATA_B23": "157",
+                "RSL_CONFIG_DATA_B24": "158",
+                "RSL_CONFIG_DATA_B25": "159",
+                "RSL_CONFIG_DATA_B26": "15A",
+                "RSL_CONFIG_DATA_B27": "15B",
+                "RSL_CONFIG_DATA_B28": "15C",
+                "RSL_CONFIG_DATA_B29": "15D",
+                "RSL_CONFIG_DATA_B30": "15E",
+                "RSL_CONFIG_DATA_B31": "15F",
+                "RSL_CONFIG_DATA_A0": "160",
+                "RSL_CONFIG_DATA_A1": "161",
+                "RSL_CONFIG_DATA_A2": "162",
+                "RSL_CONFIG_DATA_A3": "163",
+                "RSL_CONFIG_DATA_A4": "164",
+                "RSL_CONFIG_DATA_A5": "165",
+                "RSL_CONFIG_DATA_A6": "166",
+                "RSL_CONFIG_DATA_A7": "167",
+                "RSL_CONFIG_DATA_A8": "168",
+                "RSL_CONFIG_DATA_A9": "169",
+                "RSL_CONFIG_DATA_A10": "16A",
+                "RSL_CONFIG_DATA_A11": "16B",
+                "RSL_CONFIG_DATA_A12": "16C",
+                "RSL_CONFIG_DATA_A13": "16D",
+                "RSL_CONFIG_DATA_A14": "16E",
+                "RSL_CONFIG_DATA_A15": "16F",
+                "RSL_CONFIG_DATA_A16": "170",
+                "RSL_CONFIG_DATA_A17": "171",
+                "RSL_CONFIG_DATA_A18": "172",
+                "RSL_CONFIG_DATA_A19": "173",
+                "RSL_CONFIG_DATA_A20": "174",
+                "RSL_CONFIG_DATA_A21": "175",
+                "RSL_CONFIG_DATA_A22": "176",
+                "RSL_CONFIG_DATA_A23": "177",
+                "RSL_CONFIG_DATA_A24": "178",
+                "RSL_CONFIG_DATA_A25": "179",
+                "RSL_CONFIG_DATA_A26": "17A",
+                "RSL_CONFIG_DATA_A27": "17B",
+                "RSL_CONFIG_DATA_A28": "17C",
+                "RSL_CONFIG_DATA_A29": "17D",
+                "RSL_CONFIG_DATA_A30": "17E",
+                "RSL_CONFIG_DATA_A31": "17F",
             }
         )
 
         self.sens_subregisters = [
-            ("STAT_RSLROWOUTL", "STAT_REG", 3, 1, False),
-            ("STAT_RSLROWOUTR", "STAT_REG", 4, 1, False),
-            ("STAT_RSLNALLWENR", "STAT_REG", 12, 1, False),
-            ("STAT_RSLNALLWENL", "STAT_REG", 15, 1, False),
-            ("STAT_CONFIGHSTDONE", "STAT_REG", 16, 1, False),
+            ## R/W subregs
+            # Consistent with ICD usage, start_bit is msb: for [7..0] start_bit is 7
+            ("HST_MODE", "HS_TIMING_CTL", 0, 1, True),
             ("SLOWREADOFF_0", "CTRL_REG", 4, 1, True),
             ("SLOWREADOFF_1", "CTRL_REG", 5, 1, True),
+            ("MANSHUT_MODE", "CTRL_REG", 8, 1, True),
+            ("INTERLACING_EN", "CTRL_REG", 9, 1, True),
             ("HFW", "RSL_HFW_MODE_EN", 0, 1, True),
-            ("ZDT_R", "RSL_ZDT_MODE_R_EN", 0, 1, True),
-            ("ZDT_L", "RSL_ZDT_MODE_L_EN", 0, 1, True),
+            ("ZDT_A", "RSL_ZDT_MODE_A_EN", 0, 1, True),
+            ("ZDT_B", "RSL_ZDT_MODE_B_EN", 0, 1, True),
+            ("HST_DEL_EN", "HST_DELAY_EN", 0, 1, True),
+            ("PHI_DELAY_A", "HST_PHI_DELAY_DATA", 9, 10, True),
+            ("PHI_DELAY_B", "HST_PHI_DELAY_DATA", 29, 10, True),
+            # Assume that daedalus is not to be used with v1 board
+            ("VRESET_HIGH", "VRESET_HIGH_VALUE", 15, 16, True),
+            ## Read-only subregs
+            # Consistent with ICD usage, start_bit is msb: for [7..0] start_bit is 7.
+            # WARNING: reading a subregister may clear the entire associated register!
+            ("STAT_SH0RISEUR", "STAT_REG", 3, 1, False),
+            ("STAT_SH0FALLUR", "STAT_REG", 4, 1, False),
+            ("STAT_RSLNALLWENA", "STAT_REG", 12, 1, False),
+            ("STAT_RSLNALLWENB", "STAT_REG", 15, 1, False),
+            # ("STAT_CONFIGHSTDONE", "STAT_REG", 16, 1, False),
         ]
 
-    def checkSensorVoltStat(self):
-        """
-        Checks register tied to sensor select jumpers to confirm match with sensor
-          object
-
-        Returns:
-            boolean, True if jumpers select for Daedalus sensor
-        """
-        err, status = self.ca.getSubregister("DAEDALUS_DET")
-        if err:
-            logging.error(self.logerr + "unable to confirm sensor status")
-            return False
-        if not int(status):
-            logging.error(self.logerr + "Daedalus sensor not detected")
-            return False
-        return True
-
+    # TODO: add warning if daedalus and v1 board are together
     def sensorSpecific(self):
         """
         Returns:
@@ -252,92 +193,96 @@ class daedalus:
             ("HS_TIMING_DATA_BHI", "00000000"),
             ("FRAME_ORDER_SEL", "00000000"),
             ("RSL_HFW_MODE_EN", "00000000"),
-            ("RSL_ZDT_MODE_R_EN", "00000000"),
-            ("RSL_ZDT_MODE_L_EN", "00000000"),
-            ("RSL_CONFIG_DATA_R0", "00000000"),
-            ("RSL_CONFIG_DATA_R1", "00000000"),
-            ("RSL_CONFIG_DATA_R2", "00000000"),
-            ("RSL_CONFIG_DATA_R3", "00000000"),
-            ("RSL_CONFIG_DATA_R4", "00000000"),
-            ("RSL_CONFIG_DATA_R5", "00000000"),
-            ("RSL_CONFIG_DATA_R6", "00000000"),
-            ("RSL_CONFIG_DATA_R7", "00000000"),
-            ("RSL_CONFIG_DATA_R8", "00000000"),
-            ("RSL_CONFIG_DATA_R9", "00000000"),
-            ("RSL_CONFIG_DATA_R10", "00000000"),
-            ("RSL_CONFIG_DATA_R11", "00000000"),
-            ("RSL_CONFIG_DATA_R12", "00000000"),
-            ("RSL_CONFIG_DATA_R13", "00000000"),
-            ("RSL_CONFIG_DATA_R14", "00000000"),
-            ("RSL_CONFIG_DATA_R15", "00000000"),
-            ("RSL_CONFIG_DATA_R16", "00000000"),
-            ("RSL_CONFIG_DATA_R17", "00000000"),
-            ("RSL_CONFIG_DATA_R18", "00000000"),
-            ("RSL_CONFIG_DATA_R19", "00000000"),
-            ("RSL_CONFIG_DATA_R20", "00000000"),
-            ("RSL_CONFIG_DATA_R21", "00000000"),
-            ("RSL_CONFIG_DATA_R22", "00000000"),
-            ("RSL_CONFIG_DATA_R23", "00000000"),
-            ("RSL_CONFIG_DATA_R24", "00000000"),
-            ("RSL_CONFIG_DATA_R25", "00000000"),
-            ("RSL_CONFIG_DATA_R26", "00000000"),
-            ("RSL_CONFIG_DATA_R27", "00000000"),
-            ("RSL_CONFIG_DATA_R28", "00000000"),
-            ("RSL_CONFIG_DATA_R29", "00000000"),
-            ("RSL_CONFIG_DATA_R30", "00000000"),
-            ("RSL_CONFIG_DATA_R31", "00000000"),
-            ("RSL_CONFIG_DATA_L0", "00000000"),
-            ("RSL_CONFIG_DATA_L1", "00000000"),
-            ("RSL_CONFIG_DATA_L2", "00000000"),
-            ("RSL_CONFIG_DATA_L3", "00000000"),
-            ("RSL_CONFIG_DATA_L4", "00000000"),
-            ("RSL_CONFIG_DATA_L5", "00000000"),
-            ("RSL_CONFIG_DATA_L6", "00000000"),
-            ("RSL_CONFIG_DATA_L7", "00000000"),
-            ("RSL_CONFIG_DATA_L8", "00000000"),
-            ("RSL_CONFIG_DATA_L9", "00000000"),
-            ("RSL_CONFIG_DATA_L10", "00000000"),
-            ("RSL_CONFIG_DATA_L11", "00000000"),
-            ("RSL_CONFIG_DATA_L12", "00000000"),
-            ("RSL_CONFIG_DATA_L13", "00000000"),
-            ("RSL_CONFIG_DATA_L14", "00000000"),
-            ("RSL_CONFIG_DATA_L15", "00000000"),
-            ("RSL_CONFIG_DATA_L16", "00000000"),
-            ("RSL_CONFIG_DATA_L17", "00000000"),
-            ("RSL_CONFIG_DATA_L18", "00000000"),
-            ("RSL_CONFIG_DATA_L19", "00000000"),
-            ("RSL_CONFIG_DATA_L20", "00000000"),
-            ("RSL_CONFIG_DATA_L21", "00000000"),
-            ("RSL_CONFIG_DATA_L22", "00000000"),
-            ("RSL_CONFIG_DATA_L23", "00000000"),
-            ("RSL_CONFIG_DATA_L24", "00000000"),
-            ("RSL_CONFIG_DATA_L25", "00000000"),
-            ("RSL_CONFIG_DATA_L26", "00000000"),
-            ("RSL_CONFIG_DATA_L27", "00000000"),
-            ("RSL_CONFIG_DATA_L28", "00000000"),
-            ("RSL_CONFIG_DATA_L29", "00000000"),
-            ("RSL_CONFIG_DATA_L30", "00000000"),
-            ("RSL_CONFIG_DATA_L31", "00000000"),
+            ("RSL_ZDT_MODE_B_EN", "00000000"),
+            ("RSL_ZDT_MODE_A_EN", "00000000"),
+            ("RSL_CONFIG_DATA_B0", "00000000"),
+            ("RSL_CONFIG_DATA_B1", "00000000"),
+            ("RSL_CONFIG_DATA_B2", "00000000"),
+            ("RSL_CONFIG_DATA_B3", "00000000"),
+            ("RSL_CONFIG_DATA_B4", "00000000"),
+            ("RSL_CONFIG_DATA_B5", "00000000"),
+            ("RSL_CONFIG_DATA_B6", "00000000"),
+            ("RSL_CONFIG_DATA_B7", "00000000"),
+            ("RSL_CONFIG_DATA_B8", "00000000"),
+            ("RSL_CONFIG_DATA_B9", "00000000"),
+            ("RSL_CONFIG_DATA_B10", "00000000"),
+            ("RSL_CONFIG_DATA_B11", "00000000"),
+            ("RSL_CONFIG_DATA_B12", "00000000"),
+            ("RSL_CONFIG_DATA_B13", "00000000"),
+            ("RSL_CONFIG_DATA_B14", "00000000"),
+            ("RSL_CONFIG_DATA_B15", "00000000"),
+            ("RSL_CONFIG_DATA_B16", "00000000"),
+            ("RSL_CONFIG_DATA_B17", "00000000"),
+            ("RSL_CONFIG_DATA_B18", "00000000"),
+            ("RSL_CONFIG_DATA_B19", "00000000"),
+            ("RSL_CONFIG_DATA_B20", "00000000"),
+            ("RSL_CONFIG_DATA_B21", "00000000"),
+            ("RSL_CONFIG_DATA_B22", "00000000"),
+            ("RSL_CONFIG_DATA_B23", "00000000"),
+            ("RSL_CONFIG_DATA_B24", "00000000"),
+            ("RSL_CONFIG_DATA_B25", "00000000"),
+            ("RSL_CONFIG_DATA_B26", "00000000"),
+            ("RSL_CONFIG_DATA_B27", "00000000"),
+            ("RSL_CONFIG_DATA_B28", "00000000"),
+            ("RSL_CONFIG_DATA_B29", "00000000"),
+            ("RSL_CONFIG_DATA_B30", "00000000"),
+            ("RSL_CONFIG_DATA_B31", "00000000"),
+            ("RSL_CONFIG_DATA_A0", "00000000"),
+            ("RSL_CONFIG_DATA_A1", "00000000"),
+            ("RSL_CONFIG_DATA_A2", "00000000"),
+            ("RSL_CONFIG_DATA_A3", "00000000"),
+            ("RSL_CONFIG_DATA_A4", "00000000"),
+            ("RSL_CONFIG_DATA_A5", "00000000"),
+            ("RSL_CONFIG_DATA_A6", "00000000"),
+            ("RSL_CONFIG_DATA_A7", "00000000"),
+            ("RSL_CONFIG_DATA_A8", "00000000"),
+            ("RSL_CONFIG_DATA_A9", "00000000"),
+            ("RSL_CONFIG_DATA_A10", "00000000"),
+            ("RSL_CONFIG_DATA_A11", "00000000"),
+            ("RSL_CONFIG_DATA_A12", "00000000"),
+            ("RSL_CONFIG_DATA_A13", "00000000"),
+            ("RSL_CONFIG_DATA_A14", "00000000"),
+            ("RSL_CONFIG_DATA_A15", "00000000"),
+            ("RSL_CONFIG_DATA_A16", "00000000"),
+            ("RSL_CONFIG_DATA_A17", "00000000"),
+            ("RSL_CONFIG_DATA_A18", "00000000"),
+            ("RSL_CONFIG_DATA_A19", "00000000"),
+            ("RSL_CONFIG_DATA_A20", "00000000"),
+            ("RSL_CONFIG_DATA_A21", "00000000"),
+            ("RSL_CONFIG_DATA_A22", "00000000"),
+            ("RSL_CONFIG_DATA_A23", "00000000"),
+            ("RSL_CONFIG_DATA_A24", "00000000"),
+            ("RSL_CONFIG_DATA_A25", "00000000"),
+            ("RSL_CONFIG_DATA_A26", "00000000"),
+            ("RSL_CONFIG_DATA_A27", "00000000"),
+            ("RSL_CONFIG_DATA_A28", "00000000"),
+            ("RSL_CONFIG_DATA_A29", "00000000"),
+            ("RSL_CONFIG_DATA_A30", "00000000"),
+            ("RSL_CONFIG_DATA_A31", "00000000"),
             ("HST_TRIGGER_DELAY_DATA_LO", "00000000"),
             ("HST_TRIGGER_DELAY_DATA_HI", "00000000"),
-            ("HST_PHI_DELAY_DATA_LO", "00000000"),
-            ("HST_PHI_DELAY_DATA_HI", "00000000"),
+            ("HST_PHI_DELAY_DATA", "00000000"),
             ("SLOWREADOFF_0", "0"),
             ("SLOWREADOFF_1", "0"),
         ]
 
-    def setInterlacing(self, ifactor):
+    def setInterlacing(self, ifactor=None, side=None):
         """
-        Sets interlacing factor. NOTE: if called directly when HFW or ZDT mode is
-        active, this will disengage those modes automatically.
+        Sets interlacing factor. NOTE: if called directly when HFW or ZDT mode is active,
+        this will disengage those modes automatically. If hemispheres have different
+        factors when the image is acquired, the resulting frames are separated into
+        half-width images
 
         Args:
             ifactor: number of interlaced lines (generates ifactor + 1 images per frame)
               defaults to 0 (no interlacing)
+            side: identify particular hemisphere (A or B) to control. If left blank,
+              control both hemispheres
 
         Returns:
             integer: active interlacing factor (unchanged if error)
         """
+        logging.debug(self.logdebug + "setInterlacing; ifactor = " + str(ifactor))
         if ifactor is None:
             ifactor = 0
         if (
@@ -365,15 +310,20 @@ class daedalus:
             self.setZeroDeadTime(False)
         if ifactor == 0:
             bitscheme = self.maxheight * [0]
+            # deactivating one side shouldn't turn off enable for both sides
+            # TODO: is it a problem if sides are set separately, so interlacing is zero
+            #    but still enabled?
+            if side is None:
+                self.ca.setSubregister("INTERLACING_EN", "0")
         else:
             pattern = [0] + ifactor * [1]
             reps = 1 + self.maxheight // (ifactor + 1)
             bitscheme = (reps * pattern)[0 : self.maxheight]
+            self.ca.setSubregister("INTERLACING_EN", "1")
         err = ""
-        for a in range(32):
-            rname = "RSL_CONFIG_DATA_R" + str(a)
-            lname = "RSL_CONFIG_DATA_L" + str(a)
-            regbits = bitscheme[32 * a : 32 * (a + 1)]
+        for regnum in range(32):
+            regbits = bitscheme[32 * regnum : 32 * (regnum + 1)]
+            logging.debug(self.logdebug + "regbits = " + str(regbits))
             # generated pattern is reverse order from placement in register (element 0
             #   of the list is the LSB of the register)
             bitsrev = regbits[::-1]
@@ -381,20 +331,32 @@ class daedalus:
             b = "".join(s)  # assemble as binary number for processing
             hexval = "%x" % int(b, 2)
             val = hexval.zfill(8)
-            err0, _ = self.ca.setRegister(rname, val)
-            err1, _ = self.ca.setRegister(lname, val)
+            err0 = ""
+            err1 = ""
+            if side is None or side.lower() == "a":
+                lname = "RSL_CONFIG_DATA_A" + str(regnum)
+                err1, _ = self.ca.setRegister(lname, val)
+                self.interlacing[1] = ifactor
+            if side is None or side.lower() == "b":
+                rname = "RSL_CONFIG_DATA_B" + str(regnum)
+                err0, _ = self.ca.setRegister(rname, val)
+                self.interlacing[0] = ifactor
             err = err + err0 + err1
         if err:
             logging.error(self.logerr + "interlacing may not be set correctly: " + err)
-        logging.info(self.loginfo + "Interlacing factor set to " + str(ifactor))
-        self.interlacing = ifactor
+        logging.info(self.loginfo + "Interlacing set to " + str(self.interlacing))
+        if self.interlacing[0] == self.interlacing[1]:
+            self.columns = 1
+        else:
+            self.columns = 2
         return self.interlacing
 
     def setHighFullWell(self, flag):
         """
         Activates High Full Well mode. All frames are acquired simultaneously. Zero Dead
-          Time mode and interlacing will be automatically deactivated. NOTE: after
-          deactivating HFW, the board remains in uninterlaced mode (interlacing = 0)
+          Time mode and interlacing will be automatically deactivated and column number
+          will be reset to 0. NOTE: after deactivating HFW, the board remains in
+          uninterlaced mode (interlacing = 0)
 
         Args:
             flag: True to activate HFW mode, False to deactivate
@@ -402,6 +364,7 @@ class daedalus:
         Returns:
             Error message
         """
+        logging.debug(self.logdebug + "setHighFullWell; flag = " + str(flag))
         err0 = ""
         if flag:
             if self.ZDT:
@@ -411,33 +374,39 @@ class daedalus:
                 )
                 err0 = self.setZeroDeadTime(False)
             err1, _ = self.ca.setSubregister("HFW", "1")
+            self.HFW = False  # preclude HFW deactivation message in setInterlacing
+            self.setInterlacing(0)
             self.HFW = True
             logging.info(self.loginfo + "High Full Well mode active")
         else:
             self.HFW = False
             err1, _ = self.ca.setSubregister("HFW", "0")
-            self.setInterlacing(0)
             logging.info(self.loginfo + "High Full Well mode inactivate")
         err = err0 + err1
         if err:
             logging.error(self.logerr + "HFW option may not be set correctly ")
         return err
 
-    def setZeroDeadTime(self, flag):
+    def setZeroDeadTime(self, flag=True, side=None):
         """
         Activates Zero Dead Time mode. Even rows follow the assigned HST schedule; odd
           rows are acquired while the 'shutter' for the even rows are closed. High Full
           Well mode and interlacing will be automatically deactivated.
-        NOTE: after deactivating ZDT, the board reverts to uninterlaced mode
+        *NOTE* after deactivating ZDT, the board reverts to uninterlaced mode
           (interlacing = 0)
 
         Args:
             flag: True to activate ZDT mode, False to deactivate
+            side: identify particular hemisphere (A or B) to control. If left blank,
+              control both hemispheres
 
         Returns:
             Error message
         """
+        logging.debug(self.logdebug + "setZeroDeadTime; flag = " + str(flag))
         err0 = ""
+        err1 = ""
+        err2 = ""
         if flag:
             if self.HFW:
                 logging.warning(
@@ -445,19 +414,26 @@ class daedalus:
                     "setting "
                 )
                 err0 = self.setHighFullWell(False)
-            err1, _ = self.ca.setSubregister("ZDT_R", "1")
-            err2, _ = self.ca.setSubregister("ZDT_L", "1")
-            self.ZDT = False  # preclude ZDT deactivation message
-            self.setInterlacing(0)
-            self.interlacing = 1
+            if side is None or side.lower() == "a":
+                err2, _ = self.ca.setSubregister("ZDT_A", "1")
+                self.interlacing[0] = 1
+            if side is None or side.lower() == "b":
+                err1, _ = self.ca.setSubregister("ZDT_B", "1")
+                self.interlacing[1] = 1
+            # self.ZDT = False  # preclude ZDT deactivation message in setInterlacing
+            # if self.interlacing != [0, 0]:
+            #     self.setInterlacing(0)
+            # TODO: need to handle flags when ZDT active for just one side
             self.ZDT = True
             logging.info(
                 self.loginfo + "Zero Dead Time mode active; actual interlacing = 1"
             )
         else:
             self.ZDT = False
-            err1, _ = self.ca.setSubregister("ZDT_R", "0")
-            err2, _ = self.ca.setSubregister("ZDT_L", "0")
+            if side is None or side.lower() == "a":
+                err2, _ = self.ca.setSubregister("ZDT_A", "0")
+            if side is None or side.lower() == "b":
+                err1, _ = self.ca.setSubregister("ZDT_B", "0")
             self.setInterlacing(0)
             logging.info(self.loginfo + "Zero Dead Time mode inactivate")
         err = err0 + err1 + err2
@@ -465,334 +441,295 @@ class daedalus:
             logging.error(self.logerr + "ZDT option may not be set correctly ")
         return err
 
-    def setTriggerDelay(self, delayblocks):
+    def selectOscillator(self, osc=None):
         """
-        NOTE: THIS IS BASED ON AN UNCERTAIN INTERPRETATION OF THE HDD
+        Selects oscillator to control sensor timing
+        Args:
+            osc: 500|100|'ring'|external', defaults to 500 MHz
+
+        Returns:
+            error message as string
+        """
+        logging.info(self.loginfo + "selectOscillator; osc = " + str(osc))
+        if osc is None:
+            osc = 500
+        osc = str(osc)
+        if osc[:3] == "500":
+            payload = "00"
+        elif osc[:3] == "100":
+            payload = "01"
+        elif osc.upper()[:3] == "RIN":
+            payload = "10"
+        elif osc.upper()[:3] in ["EXT"]:
+            payload = "11"
+        else:
+            err = (
+                self.logerr + "selectOscillator: invalid parameter supplied. "
+                "Oscillator selection is unchanged."
+            )
+            logging.error(err)
+            return err
+        self.ca.setSubregister("OSC_SELECT", payload)
+
+    def setTriggerDelay(self, delay=0):
+        """
+        Use trigger delay timer. Actual delay is rounded down to multiple of .15 ns, up
+          to a maximum delay of 6 ns
 
         Args:
-            delayblocks: number of 150 ps blocks to delay trigger (maximum of 38?)
+            delay: trigger delay in ns
+
+        Returns:
+            String of errors, if any
         """
-        if not isinstance(delayblocks, int) or delayblocks < 0 or delayblocks > 38:
+        logging.debug(self.logdebug + "setTriggerDelay; delay = " + str(delay))
+        if (
+            not (isinstance(delay, int) or isinstance(delay, float))
+            or delay < 0
+            or delay > 6
+        ):
             err = (
                 self.logerr + "invalid trigger delay submitted. Delay remains "
                 "unchanged. "
             )
             logging.error(err)
             return err
-        delayseq = (38 - delayblocks) * [0] + delayblocks * [1] + [0, 1]
+        delayblocks = int(delay / 0.15)
+        if delayblocks < 0:
+            delayblocks = 0
+        if delayblocks > 40:
+            delayblocks = 40
+        delayseq = (40 - delayblocks) * [0] + delayblocks * [1]
         seqstr = "".join(str(x) for x in delayseq)
         seqhex = "%x" % int(seqstr, 2)
+        logging.debug(self.logdebug + "seqhex = " + str(seqhex))
         highpart = seqhex[-10:-8].zfill(8)
         lowpart = seqhex[-8:].zfill(8)
+        self.ca.setSubregister("HST_DEL_EN", "1")
         err0, _ = self.ca.setRegister("HST_TRIGGER_DELAY_DATA_LO", lowpart)
         err1, _ = self.ca.setRegister("HST_TRIGGER_DELAY_DATA_HI", highpart)
-        err2, _ = self.ca.setRegister("HS_TIMING_CTL", "00000001")
+        err2, _ = self.ca.setSubregister("HST_MODE", "1")
         delayed = delayblocks * 0.15
-        logging.info(self.loginfo + "Trigger delay = " + str(delayed) + " ns")
+        logging.info(self.loginfo + "Actual trigger delay = " + str(delayed) + " ns")
+        return err0 + err1 + err2
 
-    def setTiming(self, side, sequence, delay):
+    def setPhiDelay(self, side=None, delay=0):
         """
-        Sets timing registers based on 'sequence.' WARNING: if entire sequence does not
-          fit into the 40-bit register space, then the actual timings may differ from
-          those requested. If the timing sequence fits only once into register space
-          (i.e., for a single frame, open + closed > 19 ns ), then actual timing will be
-          (n, 40-n) irrespective of setting of second parameter, e.g. (35,1) will
-          actually result in (35,5) timing
+        Use phi delay timer. Actual delay is rounded down to multiple of .15 ns, up to a
+          maximum delay of 1.5 ns
+        Args:
+            side: hemisphere to delay; if None, delay both hemispheres
+            delay: phi delay in ns
+
+        Returns:
+            String of errors, if any
+        """
+        logging.debug(self.logdebug + "setPhiDelay; delay = " + str(delay))
+        if (
+            not (isinstance(delay, int) or isinstance(delay, float))
+            or delay < 0
+            or delay > 1.5
+        ):
+            err = (
+                self.logerr + "invalid phi delay submitted. Delay remains "
+                "unchanged. "
+            )
+            logging.error(err)
+            return err
+        delayblocks = int(delay / 0.15)
+        if delayblocks < 0:
+            delayblocks = 0
+        if delayblocks > 10:
+            delayblocks = 10
+        delayseq = (10 - delayblocks) * [0] + delayblocks * [1]
+        seqstr = "".join(str(x) for x in delayseq)
+        err1 = ""
+        err2 = ""
+        if side is None or side.upper() == "A":
+            err1, _ = self.ca.setSubregister("PHI_DELAY_A", seqstr)
+        if side is None or side.upper() == "B":
+            err2, _ = self.ca.setSubregister("PHI_DELAY_B", seqstr)
+        delayed = delayblocks * 0.15
+        logging.info(self.loginfo + "Actual phi delay = " + str(delayed) + " ns")
+        return err1 + err2
+
+    def setExtClk(self, dilation=None, frequency=None):
+        """
+        Override the standard board clock with the external clock.
+        Args:
+            dilation: ratio of base frequency (500 MHz) to desired external clock
+              frequency. Default is 25. Overridden if frequency parameter is provided
+            frequency: Desired frequency for phi clock.
+        Returns:
+            error message as string
+        """
+        logging.debug(
+            self.logdebug
+            + "setExtClk; dilation = "
+            + str(dilation)
+            + "; frequency = "
+            + str(frequency)
+        )
+        if not (isinstance(frequency, int) or isinstance(frequency, float)):
+            err = (
+                self.logerr
+                + "invalid external clock frequency submitted. Clock is not "
+                + "operating"
+            )
+            logging.error(err)
+            return err
+        self.ca.selectOscillator("external")
+        if not dilation:
+            dilation = 25
+        if not frequency:
+            frequency = 5e7 / float(dilation)
+        count = 2e7 / float(frequency) - 1  # base phi clock is 20 MHz?
+        if count < 0:
+            count = 0
+            warn = (
+                self.logwarn
+                + "external clock frequency exceeding maximum. Frequency set to "
+                + "maximum (20 MHz)"
+            )
+            logging.warning(warn)
+        if count > 0xFFFFFFFF:
+            count = 0xFFFFFFFF
+        counthex = hex(int(count))[2:].zfill(8)
+        self.ca.setRegister("HST_EXT_CLK_HALF_PER", counthex)
+
+    # TODO: enable exponential form for all large number inputs (accept floats)
+
+    def setManualShutters(self, timing=None):
+        """
+        Legacy alias for setManualTiming()
+        """
+        self.setManualTiming(timing)
+
+    def setManualTiming(self, timing=None):
+        """
+        Manual shutter timing, five intervals given in nanoseconds, e.g.,
+          [100,50,100,50,100] for frame 0 open for 100 ns, an interframe pause of 50 ns,
+           frame 1 open for 100 ns, etc. Timing is set for both hemispheres.
+
+        The actual timing is rounded down to the nearest multiple of 25 ns. (Each
+          count = 25 ns. e.g., a request for 140 ns rounds down to a count of '5',
+          which corresponds to 125 ns))
+            - Minimum timing is 75 ns
+            - Maximum is 25 * 2^30 ns (approximately 27 seconds)
 
         Args:
-            side: Hemisphere 'A' or 'B'
-            sequence: two-element tuple of timing durations in ns, e.g., '(5,2)'
-            delay: initial delay in ns
+            timing: 5-element list in nanoseconds
 
         Returns:
-            tuple (error string, 10-character hexadecimal representation of timing
-              sequence)
+            tuple (error string, response string from final message)
         """
-        if side is None:
-            side = "A"
-        if sequence is None:
-            sequence = (3, 2)
-        if delay is None:
-            delay = 0
-
-        if len(sequence) != 2:
-            err = (
-                self.logerr
-                + "Invalid sequence setting for side: "
-                + side
-                + "; timing settings are unchanged"
+        if timing is None:
+            logging.info(
+                self.loginfo
+                + "No manual timing setting provided, defaulting to (100, 150, 100, "
+                " 150, 100, 150, 100) for both hemispheres"
             )
-            logging.error(err)
-            return err, "0000000000"
-        logging.info(
-            self.loginfo
-            + "HST side "
-            + side.upper()
-            + ": "
-            + str(sequence)
-            + "; delay = "
-            + str(delay)
-        )
-        if side.upper() == "A":
-            lowreg = "HS_TIMING_DATA_ALO"
-            highreg = "HS_TIMING_DATA_AHI"
-        elif side.upper() == "B":
-            lowreg = "HS_TIMING_DATA_BLO"
-            highreg = "HS_TIMING_DATA_BHI"
-        else:
-            err = (
-                self.logerr
-                + "Invalid sensor side: "
-                + side
-                + "; timing settings unchanged"
-            )
-            logging.error(err)
-            return err, "0000000000"
-        if (sequence[0] + sequence[1]) + delay > 40:
-            err = (
-                self.logerr + "Timing sequence is too long to be implemented; "
-                "timing settings unchanged "
-            )
-            logging.error(err)
-            return err, "0000000000"
+            timing = [(100, 150, 100, 150, 100)]
 
-        self.ca.senstiming[side.upper()] = (sequence, delay)
-        self.ca.sensmanual = []  # clear manual settings from ca
+        logging.info(self.loginfo + "Manual shutter sequence: " + str(timing))
+        flattened = flattenlist(timing)
+        if (
+            len(flattened) != 5
+            or not all(isinstance(x, (int, float)) for x in flattened)
+            or not all(x >= 25 for x in flattened)
+        ):
+            err = self.logerr + "Invalid manual shutter timing list: " + str(timing)
+            logging.error(err + "; timing settings unchanged")
+            return err, "00000000"
 
-        full40 = [0] * 40
-        bitlist = []
-        flag = 1
-        sequence = sequence[:2]
-        for a in sequence:
-            add = [flag] * a
-            bitlist += add
-            if flag:
-                flag = 0
-            else:
-                flag = 1
-        # automatically truncates sequence to 39 characters
-        reversedlist = bitlist[39::-1]
-        repeats = (40 - delay) // len(reversedlist)
-        if repeats > self.nframes:
-            repeats = self.nframes
-        # Pattern from sequence repeated to fit inside 40 bits up to a maximum of
-        #   'nframes' times
-        repeated = reversedlist * repeats
-        if (len(repeated) + delay + 1) < 40 and repeats == self.nframes:
-            # add 'stop' bit for ZDT mode if full sequence is less than the full 40 bits
-            repeated = [1] + repeated
-        full40[-(len(repeated) + delay + 1) : -(delay + 1)] = repeated
-        full40bin = "".join(str(x) for x in full40)
-        full40hex = "%x" % int(full40bin, 2)
-        highpart = full40hex[-10:-8].zfill(8)
-        lowpart = full40hex[-8:].zfill(8)
-        err0, _ = self.ca.setRegister(lowreg, lowpart)
-        err1, _ = self.ca.setRegister(highreg, highpart)
-        err2, _ = self.ca.setRegister("HS_TIMING_CTL", "00000001")
-        err = err0 + err1 + err2
-        if err:
-            logging.error(self.logerr + "Timing may not have been set correctly")
-        if repeats < self.nframes:
-            actual = self.getTiming(side, actual=True)
-            expected = [delay] + 3 * list(sequence) + [sequence[0]]
-            if actual != expected:
-                logging.warning(
-                    self.logwarn + "Warning: Due to sequence length, actual "
-                    "timing sequence for side "
-                    + side
-                    + " will be "
-                    + "{"
-                    + str(actual[0])
-                    + "}"
-                    + " "
-                    + str(actual[1 : 2 * self.nframes])
-                )
-        return err, full40hex
+        timecounts = [int(a // 25) for a in flattened]
+        self.ca.sensmanual = timing
+        self.ca.senstiming = {}  # clear HST settings from ca object
 
-    def setArbTiming(self, side, sequence):
-        """
-        Args:
-            side: Hemisphere 'A' or 'B'
-            sequence: list of arbitrary timing intervals, beginning with initial delay.
-              The conventional timing (5,2) with delay = 3 would be represented by
-              [3,5,2,5,2,5,2,5].
-            *WARNING* arbitrary timings will not be restored after a board power cycle
-
-        Returns:
-            tuple (error string, 10-character hexadecimal representation of timing
-              sequence)
-        """
-        if side is None:
-            side = "A"
-        if sequence is None:
-            sequence = [0, 3, 2, 3, 2, 3, 2, 3]
-
-        logging.info(
-            self.loginfo + "HST side " + side.upper() + " (arbitrary): " + str(sequence)
-        )
-        if side.upper() == "A":
-            lowreg = "HS_TIMING_DATA_ALO"
-            highreg = "HS_TIMING_DATA_AHI"
-        elif side.upper() == "B":
-            lowreg = "HS_TIMING_DATA_BLO"
-            highreg = "HS_TIMING_DATA_BHI"
-        else:
-            err = (
-                self.logerr
-                + "Invalid sensor side: "
-                + side
-                + "; timing settings unchanged"
-            )
-            logging.error(err)
-            return err, "0000000000"
-        full40 = [0] * 40
-        bitlist = []
-        flag = 0  # similar to setTiming, but starts with delay
-        sequence = sequence[: (2 * self.nframes)]
-        for a in sequence:
-            add = [flag] * a
-            bitlist += add
-            if flag:
-                flag = 0
-            else:
-                flag = 1
-        reversedlist = bitlist[39::-1]
-        full40[-(len(reversedlist) + 1) : -1] = reversedlist
-        full40bin = "".join(str(x) for x in full40)
-        full40hex = "%x" % int(full40bin, 2)
-        highpart = full40hex[-10:-8].zfill(8)
-        lowpart = full40hex[-8:].zfill(8)
-        self.ca.setRegister(lowreg, lowpart)
-        self.ca.setRegister(highreg, highpart)
-        self.ca.setRegister("HS_TIMING_CTL", "00000001")
-        # deactivates manual shutter mode if previously engaged
-        self.ca.setRegister("MANUAL_SHUTTERS_MODE", "00000000")
-        actual = self.getTiming(side, actual=True)
-        if actual != sequence:
-            logging.warning(
-                self.logwarn + "Due to sequence length, actual timing sequence "
-                "for side "
-                + side
-                + " will be "
-                + "{"
-                + str(actual[0])
-                + "}"
-                + " "
-                + str(actual[1 : 2 * self.nframes])
-            )
-        return actual
-
-    def getTiming(self, side, actual):
-        """
-        actual = True: returns actual high speed intervals that will be generated by the
-          FPGA as list [delay, open0, closed0, open1, closed1, open2, closed2, open3]
-        actual = False: Returns high speed timing settings as set by setTiming. Assumes
-          that timing was set via the setTiming method--it will not accurately report
-          arbitrary timings set by direct register sets or manual shutter control
-
-        Args:
-            side: Hemisphere 'A' or 'B'
-            actual: False: return HST settings
-                    True: calculate and return actual HST behavior
-
-        Returns:
-            actual= False: tuple   (hemisphere label,
-                                    'open shutter' in ns,
-                                    'closed shutter' in ns,
-                                    initial delay in ns)
-                    True: list of times [delay, open0, closed0, open1, closed1, open2,
-                      closed2, open3]
-        """
-        if side is None:
-            side = "A"
-
-        logging.info(self.loginfo + "get timing, side " + side.upper())
-        if side.upper() == "A":
-            lowreg = "HS_TIMING_DATA_ALO"
-            highreg = "HS_TIMING_DATA_AHI"
-        elif side.upper() == "B":
-            lowreg = "HS_TIMING_DATA_BLO"
-            highreg = "HS_TIMING_DATA_BHI"
-        else:
-            logging.error(
-                self.logerr
-                + "Invalid sensor side: "
-                + side
-                + "; timing settings unchanged"
-            )
-            return "", 0, 0, 0
-        err, lowpart = self.ca.getRegister(lowreg)
-        err1, highpart = self.ca.getRegister(highreg)
-        if err or err1:
-            logging.error(
-                self.logerr + "Unable to retrieve timing setting (getTiming), "
-                "returning zeroes "
-            )
-            return side.upper(), 0, 0, 0
-        full40hex = highpart[-2:] + lowpart.zfill(8)
-        full40bin = "{0:0=40b}".format(int(full40hex, 16))
-        if actual:
-            full160 = 4 * full40bin
-            gblist = [[k, len(list(g))] for k, g in itertools.groupby(full160)]
-            times = [int(x[1]) for x in gblist[:-7:-1]]
-            times[0] = times[0] - 1
-            return times
-        else:
-            gblist = [[k, len(list(g))] for k, g in itertools.groupby(full40bin)]
-            delay = gblist[-1][1] - 1
-            timeon = gblist[-2][1]
-            if len(gblist) == 2:  # 39,1 corner case
-                timeoff = 1
-            elif len(gblist) == 3:  # sequence fits only once
-                timeoff = 40 - timeon
-            else:
-                timeoff = gblist[-3][1]
-            return side.upper(), timeon, timeoff, delay
-
-    def setManualShutters(self, timing):
-        """
-        Dummy function; feature is not implemented on Daedalus
-
-        Returns:
-            tuple (error string, dummy response string from final message)
-        """
-        err = (
-            self.logerr + "manual shutter control is not implemented in the "
-            "Daedalus sensor "
-        )
-        logging.error(err)
-        return err, "00000000"
+        control_messages = [
+            ("MANSHUT_MODE", "1"),
+            ("EXT_PHI_CLK_SH0_ON", "{0:#0{1}x}".format(timecounts[0], 10)[2:10]),
+            ("EXT_PHI_CLK_SH0_OFF", "{0:#0{1}x}".format(timecounts[1], 10)[2:10]),
+            ("EXT_PHI_CLK_SH1_ON", "{0:#0{1}x}".format(timecounts[2], 10)[2:10]),
+            ("EXT_PHI_CLK_SH1_OFF", "{0:#0{1}x}".format(timecounts[3], 10)[2:10]),
+            ("EXT_PHI_CLK_SH2_ON", "{0:#0{1}x}".format(timecounts[4], 10)[2:10]),
+        ]
+        return self.ca.submitMessages(control_messages, " setManualShutters: ")
 
     def getManualTiming(self):
         """
-        Dummy function; feature is not implemented on Daedalus
+        Read off manual shutter timing settings
+        Returns:
+            list of manual timing intervals
+        """
+        timing = []
+        for reg in [
+            "EXT_PHI_CLK_SH0_ON",
+            "EXT_PHI_CLK_SH0_OFF",
+            "EXT_PHI_CLK_SH1_ON",
+            "EXT_PHI_CLK_SH1_OFF",
+            "EXT_PHI_CLK_SH2_ON",
+        ]:
+            _, reghex = self.ca.getRegister(reg)
+            timing.append(25 * int(reghex, 16))
+        return timing
+
+    def getSensTemp(self, scale=None, offset=None, slope=None, dec=1):
+        """
+        Read temperature sensor located on the Daedalus sensor
+        Args:
+            scale: temperature scale to report (defaults to C, options are F and K)
+            offset: offset of linear fit of sensor response (defaults to self.toffset)
+            slope: slope of linear fit of sensor response (defaults to self.tslope)
+            dec: round to 'dec' digits after the decimal point
 
         Returns:
-            list of 2 dummy lists
+            temperature as float on given scale, rounded to .1 degree
         """
-        logging.warning(
-            self.logwarn + "manual shutter control is not implemented in the "
-            "Daedalus sensor "
-        )
-        return [[0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0]]
+        err, rval = self.ca.getMonV("MON_TSENSE_OUT", errflag=True)
+        if err:
+            logging.error(
+                self.logerr + "unable to retrieve temperature information ("
+                'getTemp), returning "0" '
+            )
+            return 0.0
+        if offset is None:
+            offset = self.toffset
+        if slope is None:
+            slope = self.tslope
 
-    def parseReadoff(self, frames):
+        ctemp = offset + slope * rval
+        if scale == "K":
+            temp = round(ctemp + 273.15, dec)
+        elif scale == "F":
+            temp = round(1.8 * ctemp + 32, dec)
+        else:
+            temp = round(ctemp, dec)
+        return temp
+
+    def parseReadoff(self, frames, columns):
         """
         Parses frames from board into images
         Args:
-            frames: data sets returned from board
+            frames: list of data arrays (frames) returned from board
+            columns: 1 (full width image) or 2 (hemispheres generate distinct images)
         Returns:
-            list of frames reordered and deinterlaced
+            list of data arrays (frames) reordered and deinterlaced
         """
+        logging.debug(self.logdebug + "parseReadoff")
         w = self.width
-        if self.ca.padToFull:
+        if hasattr(self, "ca"):  # TODO: this may no longer be necessary
+            padIt = self.ca.padToFull
+        else:
+            padIt = self.padToFull
+        if padIt:
             rows = self.maxheight
         else:
             rows = self.lastrow - self.firstrow + 1
         parsed = []
         for frame in frames:
-            current = np.zeros((rows, w), dtype=int)
-            mapped = np.zeros((rows, w), dtype=int)
+            current = np.zeros((rows, w), dtype=np.uint16)
+            mapped = np.zeros((rows, w), dtype=np.uint16)
             frame = frame.reshape(rows, w)
 
             for entry in range(int(w / 2)):
@@ -820,41 +757,61 @@ class daedalus:
                 mapped[row][480:512] = current[row][96:128]
             parsed.append(mapped)
 
-        images = self.ca.deInterlace(parsed, self.interlacing)
-        flatimages = [x.flatten() for x in images]
+        images = self.ca.partition(parsed, columns)
+        flatimages = [flattenlist(x) for x in images]
         return flatimages
 
-    def reportStatusSensor(self, statusbits):
+    def reportStatusSensor(self, statusbits, statusbits2):
         """
         Print status messages from sensor-specific bits of status register or object
           status flags
 
         Args:
             statusbits: result of checkStatus()
+            statusbits2: result of checkStatus2()
         """
         if int(statusbits[3]):
-            logging.info(self.loginfo + "RSLROWINL detected")
+            print(self.loginfo + "SH0_rise_B_edge detected")
         if int(statusbits[4]):
-            logging.info(self.loginfo + "RSLROWINR detected")
+            print(self.loginfo + "SH0_fall_B_edge detected")
         if int(statusbits[12]):
-            logging.info(self.loginfo + "RSLNALLWENR detected")
+            print(self.loginfo + "RSLNALLWENB detected")
         if int(statusbits[15]):
-            logging.info(self.loginfo + "RSLNALLWENL detected")
-        if int(statusbits[16]):
-            logging.info(self.loginfo + "CONFIGHSTDONE detected")
+            print(self.loginfo + "RSLNALLWENA detected")
         if self.HFW:
-            logging.info(self.loginfo + "High Full Well mode active")
-        if self.ZDT:
-            logging.info(self.loginfo + "Zero Dead Time mode active")
+            print(self.loginfo + "High Full Well mode active")
+        # TODO: handle two hemispheres for ZDT
+        elif self.ZDT:
+            print(self.loginfo + "Zero Dead Time mode active")
+        elif self.interlacing != [0, 0]:
+            print(
+                "{loginfo}Interlacing active: {interlacing}".format(
+                    loginfo=self.loginfo, interlacing=str(self.interlacing)
+                )
+            )
+        if self.ca.sensmanual == []:
+            print(
+                "{loginfo}High-speed timing: A:{Atiming}, B:{Btiming}".format(
+                    loginfo=self.loginfo,
+                    Atiming=self.getTiming(side="A", actual=True),
+                    Btiming=self.getTiming(side="B", actual=True),
+                )
+            )
+        else:
+            print(
+                "{loginfo}Manual timing set to {timing}".format(
+                    loginfo=self.loginfo, timing=self.getManualTiming()
+                )
+            )
 
 
 """
-Copyright (c) 2022, Lawrence Livermore National Security, LLC.  All rights reserved.  
+Copyright (c) 2025, Lawrence Livermore National Security, LLC.  All rights reserved.  
 LLNL-CODE-838080
 
-This work was produced at the Lawrence Livermore National Laboratory (LLNL) under
-contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy
-(DOE) and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
-'nsCamera' is distributed under the terms of the MIT license. All new
-contributions must be made under this license.
+This work was produced at the Lawrence Livermore National Laboratory (LLNL) under 
+contract no. DE-AC52-07NA27344 (Contract 44) between the U.S. Department of Energy (DOE)
+and Lawrence Livermore National Security, LLC (LLNS) for the operation of LLNL.
+'nsCamera' is distributed under the terms of the MIT license. All new contributions must
+be made under this license.
 """

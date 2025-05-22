@@ -224,6 +224,27 @@ class fakeCA:
         columns=1,
         logtag=None,
     ):
+        
+        # add section to specify parameters for specific sensor
+        # in _init, set everything to None
+        # use sensorname to select parameter dictionary
+        # if None, assign to parameter from dictionary
+        # e.g.,
+        # daeddict = {
+            # "firstframe" : 0
+        # if sensorname is "daedalus"
+        #    sensdict = daeddict
+        # if firstframe is None:
+        #    firstframe = sensdict["firstframe"]
+        # ...
+        #
+        # Need to be sure explicit parameters get set into sensor
+        # If this doesn't work, try changing parameters after initialization in load  
+        
+    
+        
+        
+        
         self.sensorname = sensorname
         self.boardname = None
         self.padToFull = padToFull
@@ -364,10 +385,15 @@ def loadDumpedData(
         )
         import nsCamera.sensors.icarus2 as snsr
 
+    # def buildEmptyFrames():
+    #     cols = [0] * 512
+    #     frame = np.array([cols] * (lastrow - firstrow + 1))
+    #     return [frame] * (lastframe - firstframe + 1)
+    
     def buildEmptyFrames():
         cols = [0] * 512
-        frame = np.array([cols] * (lastrow - firstrow + 1))
-        return [frame] * (lastframe - firstframe + 1)
+        frame = np.array([cols]//(interlacing+1) * (lastrow - firstrow + 1))
+        return [frame] * (lastframe - firstframe + 1) *(interlacing+1)
 
     # get defaults from class declarations if not specified as parameter
     if firstframe is None:
@@ -524,15 +550,15 @@ def saveTiffs(
     else:
         firstnum = index
 
+    if not isinstance(frames, list):
+        frames = [frames]
+
     # if this is a text string from fast readoff, do the numpy conversion now
     if isinstance(frames[0], str):
         frames = generateFrames(frames)
 
     framestemp = np.copy(frames)
-    if np.issubdtype(type(framestemp[0]), np.number):
-        # if type(framestemp[0]) is np.uint16:
-        # single frame needs to be a list containing one frame
-        framestemp = [framestemp]
+
     for idx, frame in enumerate(framestemp):
         if idx < len(framestemp) / 2:
             interlacing = self.sensor.interlacing[0]
@@ -552,7 +578,8 @@ def saveTiffs(
                         -1,
                     ),
                 )
-            frameimg = Image.fromarray(frame, "I;16")
+            frame_16bit = frame.astype(np.int16) 
+            frameimg = Image.fromarray(frame_16bit, "I;16")
             namenum = filename + "_%d" % firstnum
             tifpath = os.path.join(path, prefix + namenum + ".tif")
             frameimg.save(tifpath)
@@ -563,7 +590,7 @@ def saveTiffs(
             logging.error("{logerr}: {err}".format(logerr=self.logerr, err=err))
     return err
 
-
+## TODO: refactor common code with saveTiffs
 def plotFrames(self, frames, index=None):
     """
     Plot frame or list of frames as individual graphs.
@@ -597,6 +624,7 @@ def plotFrames(self, frames, index=None):
         frames = generateFrames(frames)
 
     framestemp = np.copy(frames)
+    
     for idx, frame in enumerate(framestemp):
         if idx < len(framestemp) / 2:
             interlacing = self.sensor.interlacing[0]

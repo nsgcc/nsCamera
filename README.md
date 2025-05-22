@@ -18,7 +18,7 @@ Version: 2.1.2 (February 2025)
 
 https://doi.org/10.11578/dc.20220803.2
 
-###### Jeremy M. Hill, Matthew S. Dayton, Brad T. Funsten, and USDOE National Nuclear Security Administration. *Nano-Second Gated CMOS Camera Software*. Computer software. https://www.osti.gov//servlets/purl/1879440. Vers. 2.1.2. USDOE National Nuclear Security Administration (NNSA). Jan. 2024. Web. doi:10.11578/dc.20220803.2. 
+###### Jeremy M. Hill, Matthew S. Dayton, Brad T. Funsten, and USDOE National Nuclear Security Administration. *Nano-Second Gated CMOS Camera Software*. Computer software. https://www.osti.gov//servlets/purl/1879440. Vers. 2.1.2. USDOE National Nuclear Security Administration (NNSA). Feb. 2025. Web. doi:10.11578/dc.20220803.2. 
 
 ------
 

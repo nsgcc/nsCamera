@@ -434,7 +434,7 @@ class daedalus(sensorBase):
                 err2, _ = self.ca.setSubregister("ZDT_A", "0")
             if side is None or side.lower() == "b":
                 err1, _ = self.ca.setSubregister("ZDT_B", "0")
-            self.setInterlacing(0)
+            self.setInterlacing=[0,0]
             logging.info(self.loginfo + "Zero Dead Time mode inactivate")
         err = err0 + err1 + err2
         if err:
